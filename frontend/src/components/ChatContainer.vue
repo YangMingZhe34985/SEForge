@@ -284,7 +284,6 @@ export default {
       // 先处理 PlantUML
 
       const tokens = md.parse(content || '', {});
-      console.log("解析后的Tokens:", tokens); // 调试输出
       const blocks = [];
       let htmlTokens = [];
 
@@ -349,7 +348,6 @@ export default {
       if (!window.MathJax || this.renderingMathJax) return;
 
       this.renderingMathJax = true;
-      console.log('开始渲染 MathJax');
 
       // 清除之前的渲染
       if (window.MathJax.typesetClear) {
@@ -366,9 +364,6 @@ export default {
                   return new Promise(resolve => setTimeout(resolve, 500))
                       .then(() => window.MathJax.typesetPromise());
                 });
-          })
-          .then(() => {
-            console.log('MathJax 渲染完成');
           })
           .catch(err => {
             console.error('MathJax 最终渲染失败:', err);
@@ -405,7 +400,6 @@ export default {
 
       // 添加文件 - 确保添加原始文件对象
       if (this.previewFiles.length > 0) {
-        console.log('准备上传文件数量:', this.previewFiles.length);
 
         this.previewFiles.forEach((fileObj, index) => {
           // 从对象中获取原始文件
@@ -413,21 +407,11 @@ export default {
             // 根据文件类型使用正确的字段名
             const fieldName = fileObj.file.type.startsWith('image/') ? 'image' : 'file';
             formData.append(fieldName, fileObj.file);
-            console.log(`添加${fieldName}:`, fileObj.file.name, fileObj.file.type, fileObj.file.size);
           } else {
             console.error('无效的文件对象:', fileObj);
           }
         });
 
-        // 调试信息：打印FormData内容
-        console.log('FormData内容:');
-        for (const [key, value] of formData.entries()) {
-          if (value instanceof File) {
-            console.log(`${key}: 文件 (${value.name}, ${value.type}, ${value.size} 字节)`);
-          } else {
-            console.log(`${key}: ${value}`);
-          }
-        }
       }
 
       // 发送消息事件
@@ -530,7 +514,6 @@ export default {
             size: this.formatFileSize(file.size),
             preview: preview
           });
-          console.log("添加图片到预览:", file.name, preview);
         } catch (err) {
           console.error("创建图片预览失败:", err);
           this.$emit('show-error', `无法预览图片: ${file.name}`);
@@ -645,9 +628,6 @@ export default {
       }
     });
   },
-  updated() {
-    console.log("DOM更新完成");
-  }
 };
 </script>
 

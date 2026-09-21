@@ -192,7 +192,6 @@ const handleLogin = async () => {
 
     if (response.data.code === 200) {
       const { userId, username } = response.data.data;
-      console.log("登录成功，用户ID:", userId);
       
       // 存储必要的信息
       localStorage.setItem("userId", userId);

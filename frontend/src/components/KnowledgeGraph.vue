@@ -214,7 +214,6 @@ export default {
     handleSearch() {
       if (this.searchQuery.trim()) {
         this.currentKeyword = this.searchQuery.trim();
-        console.log('搜索知识图谱:', this.currentKeyword);
         this.graphNodes = [];
         this.graphEdges = [];
         this.relatedNodes = [];
@@ -336,7 +335,6 @@ export default {
                 this.relatedNodes = this.findRelatedNodeNames(fullNodeData.id);
 
                 this.showNodeInfo = true; // 显示节点信息面板
-                console.log('点击节点:', this.selectedNode.name, '相关概念:', this.relatedNodes);
             }
         }
     },
@@ -365,7 +363,6 @@ export default {
                 // 移除临时链接
                 document.body.removeChild(link);
 
-                console.log('知识图谱已导出为图片');
                  this.$message.success('知识图谱已导出');
 
             } catch (error) {
@@ -405,12 +402,10 @@ export default {
                 const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
 
                 if (isFullscreen) {
-                    console.log('进入全屏模式');
                      // 如果进入全屏，可能需要重新计算容器大小并resize ECharts
                      // ECharts resize 方法会根据容器的当前大小自动调整
                     this.myChart.resize();
                 } else {
-                    console.log('退出全屏模式');
                      // 退出全屏后，也要重新调整 ECharts 大小
                      this.myChart.resize();
                 }
@@ -455,7 +450,6 @@ export default {
                               // 存储原始数据
                              // originalData: relationship // 如果需要边的详细信息
                          });
-                         // console.log(`添加边: ${node.name} -> ${relationship.targetNode.name} (${relationship.type || '关联'})`);
                     }
 
                     // 递归处理目标节点
@@ -467,7 +461,6 @@ export default {
 
     // 实际API调用方法
     fetchKnowledgeGraph(keyword) {
-      console.log('调用知识图谱API:', keyword);
 
       // 清空之前的数据和选中状态
       this.graphNodes = [];
@@ -485,7 +478,6 @@ export default {
         }
       })
       .then(response => {
-        console.log('获取知识图谱成功:', response.data);
         // 处理返回的知识图谱数据
         if (response.data && response.data.success && response.data.data) {
           const rootNode = response.data.data;
@@ -497,8 +489,6 @@ export default {
 
            // 数据加载并构建完成后，不自动选中节点，不显示面板
 
-          console.log('提取到的所有节点:', this.graphNodes);
-          console.log('提取到的所有边:', this.graphEdges);
 
 
           // 调用渲染方法
@@ -698,13 +688,11 @@ export default {
     // **修改：应用设置**
     // 这个方法现在只负责根据 maxDepth 是否改变来决定是否重新获取数据
     applySettings() {
-         console.log('应用设置...');
          this.settingsVisible = false; // 应用设置后隐藏面板
 
         // 判断探索深度是否改变
         if (this.currentMaxDepth !== this.appliedMaxDepth) {
             // 如果探索深度改变，需要重新获取数据
-            console.log(`探索深度从 ${this.appliedMaxDepth} 变为 ${this.currentMaxDepth}，重新获取数据。`);
              // 清空当前图谱数据和选中状态
              this.graphNodes = [];
              this.graphEdges = [];
@@ -734,7 +722,6 @@ export default {
         } else {
             // 如果探索深度没有改变，其他设置的改变已经在 updateGraphOptions 中实时预览了
             // 这里只需要同步一下 applied... 值，表示这些设置是"最终确认"的
-             console.log('非深度设置改变，已通过预览更新。同步应用设置。');
              this.appliedRepulsion = this.currentRepulsion;
              this.appliedEdgeLength = this.currentEdgeLength;
              this.appliedShowEdgeLabels = this.showEdgeLabels;
@@ -744,7 +731,6 @@ export default {
 
     // **新增方法：实时更新图谱配置以预览效果**
     updateGraphOptions() {
-         console.log('更新图谱选项预览...');
         if (this.myChart && this.graphNodes.length > 0) {
             // 获取当前配置项，只修改需要更新的部分
             const option = this.myChart.getOption();
