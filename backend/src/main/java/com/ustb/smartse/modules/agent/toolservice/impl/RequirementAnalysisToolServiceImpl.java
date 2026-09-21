@@ -2,6 +2,7 @@ package com.ustb.smartse.modules.agent.toolservice.impl;
 
 import com.ustb.smartse.modules.agent.toolservice.RequirementAnalysisToolService;
 import net.sourceforge.plantuml.SourceStringReader;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
@@ -10,13 +11,14 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@Slf4j
 @Service
 public class RequirementAnalysisToolServiceImpl implements RequirementAnalysisToolService {
 
     @Override
     public String generateUseCaseDiagram(String userStory) {
 
-        System.out.print("生成PlantUML用例图，输入的用户故事是：" + userStory);
+        log.debug("生成PlantUML用例图，输入的用户故事是：{}", userStory);
 
         // 提取用户角色、操作和业务目标
         List<String> actors = extractActors(userStory);
@@ -62,7 +64,7 @@ public class RequirementAnalysisToolServiceImpl implements RequirementAnalysisTo
     @Override
     public String validateUseCaseDiagram(String plantUmlCode) {
 
-        System.out.print("验证PlantUML用例图，输入的PlantUML代码是：" + plantUmlCode);
+        log.debug("验证PlantUML用例图，输入的PlantUML代码是：{}", plantUmlCode);
 
         List<String> validationErrors = new ArrayList<>();
 
@@ -110,7 +112,7 @@ public class RequirementAnalysisToolServiceImpl implements RequirementAnalysisTo
     @Override
     public String checkRequirementCompleteness(String requirements) {
 
-        System.out.print("检查需求完整性，输入的需求描述是：" + requirements);
+        log.debug("检查需求完整性，输入的需求描述是：{}", requirements);
 
         List<String> incompletenessIssues = new ArrayList<>();
 
@@ -150,7 +152,7 @@ public class RequirementAnalysisToolServiceImpl implements RequirementAnalysisTo
     @Override
     public String detectRequirementConflicts(String requirements) {
 
-        System.out.print("检测需求冲突，输入的需求描述是：" + requirements);
+        log.debug("检测需求冲突，输入的需求描述是：{}", requirements);
 
         List<String> conflicts = new ArrayList<>();
 
@@ -206,7 +208,7 @@ public class RequirementAnalysisToolServiceImpl implements RequirementAnalysisTo
     @Override
     public String convertToFormalUseCase(String userStory) {
 
-        System.out.print("将用户故事转换为正式用例，输入的用户故事是：" + userStory);
+        log.debug("将用户故事转换为正式用例，输入的用户故事是：{}", userStory);
 
         List<String> actors = extractActors(userStory);
         List<String> actions = extractActions(userStory);

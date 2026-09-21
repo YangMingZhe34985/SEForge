@@ -98,7 +98,7 @@ public class DashScopeConfiguration {
         } catch (Exception e) {
             log.error("DashScope API连接测试失败: {}", e.getMessage());
             if (log.isDebugEnabled()) {
-                e.printStackTrace();
+                log.debug("DashScope API连接测试失败详情", e);
             }
             log.info("尽管API测试失败，仍继续创建模型实例");
         }

@@ -5,8 +5,6 @@ import com.ustb.smartse.api.llm.dto.OpenAiMessage;
 import com.ustb.smartse.api.llm.dto.OpenAiRequest;
 import com.ustb.smartse.api.llm.dto.OpenAiResponse;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -24,8 +22,6 @@ import java.util.regex.Pattern;
 @Slf4j
 @Service
 public class DeepSeekApi {
-
-    private static final Logger log = LoggerFactory.getLogger(DeepSeekApi.class);
 
     @Value("${deepseek.api.url}")
     private String apiUrl;
@@ -51,12 +47,12 @@ public class DeepSeekApi {
             request.setMessages(Collections.singletonList(new OpenAiMessage("user", prompt)));
             // 添加响应格式控制
             request.setTemperature(0.1); // 降低温度，使输出更确定性
-            request.setMax_tokens(4000); // 增加最大令牌数，确保完整响应
+            request.setMaxTokens(4000); // 增加最大令牌数，确保完整响应
             
             // 使用Map设置response_format
             Map<String, String> responseFormat = new HashMap<>();
             responseFormat.put("type", "json_object");
-            request.setResponse_format(responseFormat); // 请求JSON格式响应
+            request.setResponseFormat(responseFormat); // 请求JSON格式响应
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
@@ -101,7 +97,15 @@ public class DeepSeekApi {
                     log.warn("无法序列化响应对象: {}", e.getMessage());
                 }
                 
-                String content = response.getBody().getChoices().get(0).getMessage().getContent();
+                // 边界防护：choices 可能为空或缺少 message，避免 IndexOutOfBounds / NPE
+                OpenAiResponse body = response.getBody();
+                if (body.getChoices() == null || body.getChoices().isEmpty()
+                        || body.getChoices().get(0).getMessage() == null) {
+                    log.error("DeepSeek API响应缺少有效的choices内容");
+                    return "调用大模型失败，请稍后再试。";
+                }
+
+                String content = body.getChoices().get(0).getMessage().getContent();
                 log.info("DeepSeek API响应内容长度: {} 字符", content != null ? content.length() : 0);
                 
                 // 增强的响应内容清理和提取

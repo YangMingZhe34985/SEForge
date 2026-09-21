@@ -8,12 +8,14 @@ import com.ustb.smartse.modules.user.entity.User;
 import com.ustb.smartse.modules.user.mapper.UserMapper;
 import com.ustb.smartse.modules.user.service.UserService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
 
 import java.util.concurrent.TimeUnit;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
@@ -24,6 +26,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Override
     public boolean register(User user) {
         try {
+            // 参数校验（前置，避免以 null 条件执行数据库查询）
+            if (user == null || user.getUsername() == null || user.getPassword() == null) {
+                return false;
+            }
+
             // 检查用户名是否已存在
             QueryWrapper<User> query = new QueryWrapper<>();
             query.eq("username", user.getUsername());
@@ -31,32 +38,30 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
                 return false; // 用户名已存在
             }
 
-            // 参数校验
-            if (user.getUsername() == null || user.getPassword() == null) {
-                return false;
-            }
-
             // 加密密码
             user.setPassword(DigestUtils.md5DigestAsHex(user.getPassword().getBytes()));
 
-            // 插入用户并打印结果
+            // 插入用户
             int result = userMapper.insert(user);
-            System.out.println("插入结果: " + result);
+            log.debug("用户注册插入结果: {}", result);
 
             return result>0;
         } catch (Exception e) {
-            e.printStackTrace(); // 打印异常堆栈，便于调试
+            log.error("用户注册失败, username: {}", user != null ? user.getUsername() : null, e);
             return false; // 出现异常时返回false
         }
     }
 
     @Override
     public LoginResponse loginAndCache(String username, String password) {
+        if (username == null || password == null) {
+            return null; // 参数缺失按登录失败处理，避免 NPE
+        }
 
-        String new_password = DigestUtils.md5DigestAsHex(password.getBytes());
+        String newPassword = DigestUtils.md5DigestAsHex(password.getBytes());
         User user = lambdaQuery()
                 .eq(User::getUsername, username)
-                .eq(User::getPassword, new_password)
+                .eq(User::getPassword, newPassword)
                 .one();
 
         if (user == null) return null;

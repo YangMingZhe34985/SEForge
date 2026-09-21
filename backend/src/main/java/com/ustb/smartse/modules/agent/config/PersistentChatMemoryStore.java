@@ -53,7 +53,7 @@ public class PersistentChatMemoryStore implements ChatMemoryStore {
      */
     @Override
     public List<dev.langchain4j.data.message.ChatMessage> getMessages(Object memoryId) {
-        System.out.println("📝 getMessages 调用 memoryId = " + memoryId);
+        log.debug("📝 getMessages 调用 memoryId = {}", memoryId);
         String key = REDIS_PREFIX + memoryId;
 
         // 检查是否为临时会话
@@ -226,7 +226,7 @@ public class PersistentChatMemoryStore implements ChatMemoryStore {
      */
     @Override
     public void updateMessages(Object memoryId, List<dev.langchain4j.data.message.ChatMessage> messages) {
-        System.out.println("📝 updateMessages 调用 memoryId = " + memoryId);
+        log.debug("📝 updateMessages 调用 memoryId = {}", memoryId);
         String key = REDIS_PREFIX + memoryId;
 
 
@@ -437,7 +437,7 @@ public class PersistentChatMemoryStore implements ChatMemoryStore {
      */
     @Override
     public void deleteMessages(Object memoryId) {
-        System.out.println("📝 deleteMessages 调用 memoryId = " + memoryId);
+        log.debug("📝 deleteMessages 调用 memoryId = {}", memoryId);
         String key = REDIS_PREFIX + memoryId;
         redisTemplate.delete(key);
 

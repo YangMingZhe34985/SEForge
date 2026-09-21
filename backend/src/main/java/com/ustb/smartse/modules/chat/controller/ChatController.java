@@ -51,11 +51,11 @@ public class ChatController {
         String memoryId = userId + ":" + sessionId;
 
         // 调用智能体路由服务
-        TokenStream stream = agentRouterService.routeToAgent(memoryId, message);;
+        TokenStream stream = agentRouterService.routeToAgent(memoryId, message);
 
         // 判断是否首次提问（延迟执行，避免阻塞响应）
         boolean isFirstMessage = chatSessionService.isFirstMessage(sessionId);
-        System.out.println("isFirstMessage:" + isFirstMessage);
+        log.debug("isFirstMessage: {}", isFirstMessage);
 
         return Flux.create(sink -> {
             stream

@@ -1,5 +1,6 @@
 package com.ustb.smartse.api.llm.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
@@ -16,8 +17,13 @@ public class OpenAiRequest {
     private String model;
     private List<OpenAiMessage> messages;
     private Double temperature;
-    private Map<String, String> response_format;
-    private int max_tokens;
+
+    // 线上协议字段为 snake_case，通过 @JsonProperty 保持 JSON 契约不变
+    @JsonProperty("response_format")
+    private Map<String, String> responseFormat;
+
+    @JsonProperty("max_tokens")
+    private int maxTokens;
 
     // 手动添加setter方法，防止Lombok注解处理器问题
     public void setModel(String model) {
@@ -32,19 +38,19 @@ public class OpenAiRequest {
         this.temperature = temperature;
     }
 
-    public void setResponse_format(Map<String, String> response_format) {
-        this.response_format = response_format;
+    public void setResponseFormat(Map<String, String> responseFormat) {
+        this.responseFormat = responseFormat;
     }
 
-    public Map<String, String> getResponse_format() {
-        return response_format;
+    public Map<String, String> getResponseFormat() {
+        return responseFormat;
     }
 
-    public int getMax_tokens() {
-        return max_tokens;
+    public int getMaxTokens() {
+        return maxTokens;
     }
 
-    public void setMax_tokens(int max_tokens) {
-        this.max_tokens = max_tokens;
+    public void setMaxTokens(int maxTokens) {
+        this.maxTokens = maxTokens;
     }
 }
