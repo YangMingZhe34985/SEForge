@@ -1,0 +1,39 @@
+/* 在您的全局CSS中添加以下样式 */
+.markdown-body ul,
+.markdown-body ol {
+    padding-left: 2em; /* 统一缩进 */
+    margin-bottom: 16px;
+}
+
+/* 针对不同列表符号的特殊调整 */
+.markdown-body ul li {
+    list-style-type: disc; /* 默认实心圆点 */
+}
+
+.markdown-body ul li.task-list-item {
+    list-style-type: none; /* 任务列表无符号 */
+}
+
+/* 特殊符号调整 */
+.markdown-body ul li:has(> input[type="checkbox"] + [checked="true"]::before) {
+    content: "✓";
+    color: green;
+    padding-right: 0.5em;
+}
+
+.markdown-body ul li:has(> input[type="checkbox"] + [checked="false"]::before) {
+    content: "✗";
+    color: red;
+    padding-right: 0.5em;
+}
+
+/* 自定义圆形和点符号 */
+.markdown-body ul li.custom-circle::before {
+    content: "○";
+    padding-right: 0.5em;
+}
+
+.markdown-body ul li.custom-dot::before {
+    content: "·";
+    padding-right: 0.5em;
+}

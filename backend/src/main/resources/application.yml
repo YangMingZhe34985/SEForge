@@ -1,0 +1,208 @@
+# 服务器配置
+server:
+  port: 8080
+
+# Spring配置
+spring:
+  # 数据源配置
+  datasource:
+    url: jdbc:mysql://localhost:3306/smartse?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # Jackson配置
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    serialization:
+      write-dates-as-timestamps: false
+      fail-on-empty-beans: false
+    deserialization:
+      fail-on-unknown-properties: false
+    parser:
+      allow-unquoted-control-chars: true
+      allow-single-quotes: true
+
+  # 文件上传配置
+  servlet:
+    multipart:
+      max-file-size: 200MB
+      max-request-size: 300MB
+
+  # 数据配置
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 3000
+    elasticsearch:
+      repositories:
+        enabled: true
+
+  # Neo4j配置
+  neo4j:
+    uri: bolt://localhost:7687
+    authentication:
+      username: ${NEO4J_USERNAME:neo4j}
+      password: ${NEO4J_PASSWORD:password}
+    connection:
+      pool:
+        max-connection-lifetime: 1h
+        max-connection-pool-size: 100
+
+# MyBatis Plus配置
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# 头像配置（通过环境变量覆盖部署路径与访问前缀）
+avatar:
+  base-dir: ${AVATAR_BASE_DIR:/opt/app/resources/img/avatars/}
+  access-url-prefix: ${AVATAR_ACCESS_URL_PREFIX:http://localhost:8080/avatar/}
+
+
+# DeepSeek配置
+deepseek:
+  api:
+    url: https://api.deepseek.com/v1/chat/completions
+    key: ${DEEPSEEK_API_KEY:}
+
+# NLP配置
+nlp:
+  use-stanford: true
+  memory:
+    max-heap-mb: 4096
+  stanford:
+    use-minimal-pipeline: true
+  test-on-startup: true
+
+# LangChain4j配置
+langchain4j:
+  openai:
+    chat-model:
+      model-name: deepseek-chat
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: https://api.deepseek.com/v1/
+      max-tokens: 4096
+  # DashScope通义千问配置
+  dashscope:
+    api-key: ${DASHSCOPE_API_KEY:}  # 通义千问 API Key（通过环境变量 DASHSCOPE_API_KEY 配置）
+
+# 向量存储配置
+smartse:
+  vector-store:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:}  # 通义千问 API Key（通过环境变量 DASHSCOPE_API_KEY 配置）
+      model: "text-embedding-v2"
+    milvus:
+      host: localhost
+      port: 19530
+      collection-prefix: smartse_
+      embedding-dimension: 1536
+      fallback-to-memory: true
+      enabled: true
+      auto-load-collection: false
+
+# 爬虫配置
+crawler:
+  thread-num: 5
+  sleep-time: 1000
+  retry-times: 3
+  max-page-count: 200
+  timeout: 10000
+  user-agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+  targets:
+    - name: "设计模式"
+      start-urls:
+        - "https://refactoringguru.cn/design-patterns"
+        - "https://www.runoob.com/design-pattern/design-pattern-tutorial.html"
+      url-pattern: ".*/(design-patterns|design-pattern).*"
+      target-type: "webpage"
+      category: "设计模式"
+      selectors:
+        title: "//h1/text()"
+        content: "//article"
+
+    - name: "UML教程"
+      start-urls:
+        - "https://plantuml.com/zh/class-diagram"
+        - "https://www.visual-paradigm.com/cn/guide/uml-unified-modeling-language/what-is-uml/"
+      url-pattern: ".*/(uml|class-diagram).*"
+      target-type: "webpage"
+      category: "UML"
+      selectors:
+        title: "//h1/text()"
+        content: "//div[@class='content']"
+
+    - name: "软件工程基础"
+      start-urls:
+        - "https://www.runoob.com/software-engineering/software-engineering-tutorial.html"
+        - "https://www.tutorialspoint.com/software_engineering/index.htm"
+      url-pattern: ".*/software[-_]engineering.*"
+      target-type: "webpage"
+      category: "软件工程基础"
+      selectors:
+        title: "//h1/text()"
+        content: "//div[@class='content']"
+
+    - name: "敏捷开发"
+      start-urls:
+        - "https://www.agilealliance.org/agile101/"
+        - "https://www.scrumguides.org/scrum-guide.html"
+      url-pattern: ".*/agile.*"
+      target-type: "webpage"
+      category: "敏捷开发"
+      selectors:
+        title: "//h1/text()"
+        content: "//article"
+
+    - name: "需求工程"
+      start-urls:
+        - "https://www.modernrequirements.com/requirements-engineering/"
+        - "https://www.visual-paradigm.com/guide/requirements-gathering/what-is-requirements-engineering/"
+      url-pattern: ".*/requirements.*"
+      target-type: "webpage"
+      category: "需求工程"
+      selectors:
+        title: "//h1/text()"
+        content: "//div[@class='content']"
+
+    - name: "软件工程PDF"
+      start-urls:
+        - "https://www.cs.ccu.edu.tw/~ytlee/Course/SoftwareEngineering/chap1.pdf"
+        - "https://www.tutorialspoint.com/software_engineering/software_engineering_tutorial.pdf"
+      target-type: "pdf"
+      category: "软件工程"
+
+# Whisper配置（开源本地模型）
+whisper:
+  model:
+    path: ${WHISPER_MODEL_PATH:./models/whisper}
+  python:
+    path: ${WHISPER_PYTHON_PATH:python}
+
+# 视频处理配置
+video:
+  temp:
+    dir: ${VIDEO_TEMP_DIR:./temp/video}
+
+# PDF处理配置
+pdf:
+  temp:
+    dir: ${PDF_TEMP_DIR:./temp/pdf}
+  images:
+    dir: ${PDF_IMAGES_DIR:./temp/pdf/images}
+
+# Python配置
+python:
+  path: ${PYTHON_PATH:python}  # 或者指定Python可执行文件的完整路径
+
+# PyMuPDF依赖安装说明
+# 需要在系统中安装以下Python依赖:
+# pip install PyMuPDF pillow
+
+# HanLP配置
+hanlp:
+  root: ./hanlp
+  show-term-nature: false

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库检索 - 智能软件工程辅导系统</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1, h2 {
+            color: #333;
+            text-align: center;
+        }
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .search-box {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        .search-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px 0 0 4px;
+            font-size: 16px;
+        }
+        .search-button {
+            background-color: #1890ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 0 4px 4px 0;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .search-button:hover {
+            background-color: #40a9ff;
+        }
+        .result-container {
+            margin-top: 20px;
+        }
+        .answer-box {
+            background-color: #f0f8ff;
+            border-left: 4px solid #1890ff;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 0 4px 4px 0;
+        }
+        .reference-box {
+            background-color: #f9f9f9;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            border: 1px solid #eee;
+        }
+        .reference-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #1890ff;
+        }
+        .reference-content {
+            color: #333;
+        }
+        .reference-meta {
+            color: #999;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            display: none;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 2s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .home-link {
+            display: block;
+            text-align: center;
+            margin-top: 20px;
+            color: #1890ff;
+            text-decoration: none;
+        }
+        .home-link:hover {
+            text-decoration: underline;
+        }
+        .error-message {
+            color: red;
+            text-align: center;
+            margin: 20px 0;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>知识库检索</h1>
+    
+    <div class="container">
+        <div class="search-box">
+            <input type="text" id="search-input" class="search-input" placeholder="请输入您的问题..." />
+            <button id="search-button" class="search-button">搜索</button>
+        </div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>正在检索并生成回答，请稍候...</p>
+        </div>
+        
+        <div class="error-message" id="error-message"></div>
+        
+        <div class="result-container" id="result-container" style="display: none;">
+            <h2>回答</h2>
+            <div class="answer-box" id="answer-box"></div>
+            
+            <h2>参考资料</h2>
+            <div id="references-container"></div>
+        </div>
+    </div>
+    
+    <a href="/" class="home-link">返回首页</a>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const searchInput = document.getElementById('search-input');
+            const searchButton = document.getElementById('search-button');
+            const loading = document.getElementById('loading');
+            const resultContainer = document.getElementById('result-container');
+            const answerBox = document.getElementById('answer-box');
+            const referencesContainer = document.getElementById('references-container');
+            const errorMessage = document.getElementById('error-message');
+            
+            // 测试RAG功能是否可用
+            fetch('/api/rag/test')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('RAG服务不可用');
+                    }
+                    return response.json();
+                })
+                .catch(error => {
+                    console.error('RAG服务测试失败:', error);
+                    errorMessage.textContent = '警告：RAG服务可能不可用，请联系管理员。';
+                    errorMessage.style.display = 'block';
+                });
+            
+            searchButton.addEventListener('click', performSearch);
+            searchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    performSearch();
+                }
+            });
+            
+            function performSearch() {
+                const question = searchInput.value.trim();
+                if (!question) {
+                    return;
+                }
+                
+                // 显示加载状态
+                loading.style.display = 'block';
+                resultContainer.style.display = 'none';
+                errorMessage.style.display = 'none';
+                
+                // 发送请求
+                fetch('/api/rag/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        question: question,
+                        topK: 5,
+                        minScore: 0.0
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('查询失败');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.code === 0 && data.data) {
+                        // 显示结果
+                        answerBox.innerHTML = formatText(data.data.answer);
+                        
+                        // 显示参考资料
+                        referencesContainer.innerHTML = '';
+                        if (data.data.references && data.data.references.length > 0) {
+                            data.data.references.forEach((ref, index) => {
+                                const refBox = document.createElement('div');
+                                refBox.className = 'reference-box';
+                                
+                                const title = document.createElement('div');
+                                title.className = 'reference-title';
+                                title.textContent = `参考资料 ${index + 1} (相关度: ${ref.score.toFixed(2)})`;
+                                
+                                const content = document.createElement('div');
+                                content.className = 'reference-content';
+                                content.innerHTML = formatText(ref.content);
+                                
+                                const meta = document.createElement('div');
+                                meta.className = 'reference-meta';
+                                
+                                if (ref.metadata) {
+                                    const metaText = [];
+                                    if (ref.metadata.title) metaText.push(`标题: ${ref.metadata.title}`);
+                                    if (ref.metadata.id) metaText.push(`ID: ${ref.metadata.id}`);
+                                    if (ref.metadata.category) metaText.push(`分类: ${ref.metadata.category}`);
+                                    
+                                    meta.textContent = metaText.join(' | ');
+                                }
+                                
+                                refBox.appendChild(title);
+                                refBox.appendChild(content);
+                                refBox.appendChild(meta);
+                                referencesContainer.appendChild(refBox);
+                            });
+                        } else {
+                            referencesContainer.innerHTML = '<p>没有找到相关参考资料</p>';
+                        }
+                        
+                        resultContainer.style.display = 'block';
+                    } else {
+                        throw new Error(data.msg || '查询失败');
+                    }
+                })
+                .catch(error => {
+                    console.error('搜索错误:', error);
+                    errorMessage.textContent = '查询失败: ' + error.message;
+                    errorMessage.style.display = 'block';
+                })
+                .finally(() => {
+                    loading.style.display = 'none';
+                });
+            }
+            
+            function formatText(text) {
+                if (!text) return '';
+                
+                // 替换换行符为<br>
+                let formatted = text.replace(/\n/g, '<br>');
+                
+                // 处理Markdown风格的加粗
+                formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                
+                return formatted;
+            }
+        });
+    </script>
+</body>
+</html> 

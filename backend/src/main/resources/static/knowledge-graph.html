@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能软件工程辅导系统 - 知识图谱</title>
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/vis/4.21.0/vis.min.js"></script>
+    <link href="https://cdn.bootcdn.net/ajax/libs/vis/4.21.0/vis.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .header {
+            background-color: #1890ff;
+            color: white;
+            padding: 15px;
+            text-align: center;
+        }
+        .container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        .sidebar {
+            width: 300px;
+            background-color: #f5f5f5;
+            padding: 15px;
+            overflow-y: auto;
+            border-right: 1px solid #ddd;
+        }
+        .graph-container {
+            flex: 1;
+            position: relative;
+        }
+        #knowledge-graph {
+            width: 100%;
+            height: 100%;
+            background-color: white;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select, button {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #1890ff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-top: 5px;
+        }
+        button:hover {
+            background-color: #40a9ff;
+        }
+        .result-panel {
+            margin-top: 20px;
+            border-top: 1px solid #ddd;
+            padding-top: 15px;
+        }
+        .result-panel h3 {
+            margin-top: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>智能软件工程辅导系统 - 知识图谱</h1>
+    </div>
+    
+    <div class="container">
+        <div class="sidebar">
+            <div class="form-group">
+                <label for="search-type">搜索类型</label>
+                <select id="search-type">
+                    <option value="node">节点搜索</option>
+                    <option value="path">路径搜索</option>
+                    <option value="type">类型搜索</option>
+                    <option value="reasoning">推理</option>
+                </select>
+            </div>
+            
+            <!-- 节点搜索 -->
+            <div id="node-search" class="search-panel">
+                <div class="form-group">
+                    <label for="node-name">节点名称</label>
+                    <input type="text" id="node-name" placeholder="输入节点名称">
+                </div>
+                <button id="search-node-btn">搜索节点</button>
+                <button id="search-related-btn">查找相关节点</button>
+            </div>
+            
+            <!-- 路径搜索 -->
+            <div id="path-search" class="search-panel" style="display:none;">
+                <div class="form-group">
+                    <label for="start-node">起始节点</label>
+                    <input type="text" id="start-node" placeholder="输入起始节点名称">
+                </div>
+                <div class="form-group">
+                    <label for="end-node">终止节点</label>
+                    <input type="text" id="end-node" placeholder="输入终止节点名称">
+                </div>
+                <button id="search-path-btn">查找路径</button>
+            </div>
+            
+            <!-- 类型搜索 -->
+            <div id="type-search" class="search-panel" style="display:none;">
+                <div class="form-group">
+                    <label for="node-type">节点类型</label>
+                    <select id="node-type">
+                        <option value="CONCEPT">概念</option>
+                        <option value="ENTRY">知识条目</option>
+                        <option value="CATEGORY">分类</option>
+                        <option value="ENTITY">实体</option>
+                        <option value="PDF">PDF资源</option>
+                        <option value="VIDEO">视频资源</option>
+                    </select>
+                </div>
+                <button id="search-type-btn">查找指定类型节点</button>
+            </div>
+            
+            <!-- 推理 -->
+            <div id="reasoning-panel" class="search-panel" style="display:none;">
+                <div class="form-group">
+                    <label for="reasoning-type">推理类型</label>
+                    <select id="reasoning-type">
+                        <option value="principle-applications">设计原则应用场景</option>
+                        <option value="pattern-inheritance">设计模式继承关系</option>
+                        <option value="related-patterns">相关设计模式</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="reasoning-name">名称</label>
+                    <input type="text" id="reasoning-name" placeholder="输入名称">
+                </div>
+                <button id="reasoning-btn">执行推理</button>
+            </div>
+            
+            <div class="result-panel">
+                <h3>结果</h3>
+                <div id="result-container"></div>
+            </div>
+        </div>
+        
+        <div class="graph-container">
+            <div id="knowledge-graph"></div>
+        </div>
+    </div>
+    
+    <script>
+        // 全局变量
+        let nodes = new vis.DataSet();
+        let edges = new vis.DataSet();
+        let network = null;
+        
+        // 初始化图谱
+        function initGraph() {
+            const container = document.getElementById('knowledge-graph');
+            const data = {
+                nodes: nodes,
+                edges: edges
+            };
+            const options = {
+                nodes: {
+                    shape: 'dot',
+                    size: 16,
+                    font: {
+                        size: 14
+                    }
+                },
+                edges: {
+                    width: 1,
+                    smooth: {
+                        type: 'continuous'
+                    },
+                    arrows: {
+                        to: {
+                            enabled: true,
+                            scaleFactor: 0.5
+                        }
+                    },
+                    font: {
+                        size: 12,
+                        align: 'middle'
+                    }
+                },
+                physics: {
+                    stabilization: false,
+                    barnesHut: {
+                        gravitationalConstant: -2000,
+                        centralGravity: 0.3,
+                        springLength: 150,
+                        springConstant: 0.04,
+                        damping: 0.09
+                    }
+                },
+                interaction: {
+                    tooltipDelay: 200,
+                    hideEdgesOnDrag: true
+                }
+            };
+            network = new vis.Network(container, data, options);
+            
+            // 点击事件
+            network.on("doubleClick", function(params) {
+                if (params.nodes.length > 0) {
+                    const nodeId = params.nodes[0];
+                    fetchRelatedNodes(nodeId);
+                }
+            });
+        }
+        
+        // 搜索节点
+        function searchNode(name) {
+            $.ajax({
+                url: `/api/knowledge-graph/nodes?name=${encodeURIComponent(name)}`,
+                method: 'GET',
+                success: function(response) {
+                    if (response.code === 0 && response.data) {
+                        clearGraph();
+                        addNodeToGraph(response.data);
+                        showResult(`找到节点: ${response.data.name}`);
+                    } else {
+                        showResult(`未找到节点: ${name}`);
+                    }
+                },
+                error: function(error) {
+                    showResult(`搜索失败: ${error.responseText}`);
+                }
+            });
+        }
+        
+        // 查找相关节点
+        function fetchRelatedNodes(nodeId) {
+            $.ajax({
+                url: `/api/knowledge-graph/nodes/${nodeId}/related`,
+                method: 'GET',
+                success: function(response) {
+                    if (response.code === 0 && response.data) {
+                        const relatedNodes = response.data;
+                        
+                        // 添加相关节点
+                        relatedNodes.forEach(node => {
+                            addNodeToGraph(node);
+                            
+                            // 添加边
+                            edges.add({
+                                id: `edge_${nodeId}_${node.id}`,
+                                from: nodeId,
+                                to: node.id,
+                                label: "关联"
+                            });
+                        });
+                        
+                        showResult(`找到 ${relatedNodes.length} 个相关节点`);
+                    } else {
+                        showResult(`未找到相关节点`);
+                    }
+                },
+                error: function(error) {
+                    showResult(`查询失败: ${error.responseText}`);
+                }
+            });
+        }
+        
+        // 查找路径
+        function searchPath(startNodeName, endNodeName) {
+            $.ajax({
+                url: `/api/knowledge-graph/path?startNodeName=${encodeURIComponent(startNodeName)}&endNodeName=${encodeURIComponent(endNodeName)}`,
+                method: 'GET',
+                success: function(response) {
+                    if (response.code === 0 && response.data) {
+                        const pathNodes = response.data;
+                        clearGraph();
+                        
+                        // 添加路径上的所有节点
+                        pathNodes.forEach(node => {
+                            addNodeToGraph(node);
+                        });
+                        
+                        // 添加边
+                        for (let i = 0; i < pathNodes.length - 1; i++) {
+                            edges.add({
+                                id: `path_edge_${pathNodes[i].id}_${pathNodes[i+1].id}`,
+                                from: pathNodes[i].id,
+                                to: pathNodes[i+1].id,
+                                label: "路径",
+                                color: {color: "#ff4500"}
+                            });
+                        }
+                        
+                        showResult(`找到从 ${startNodeName} 到 ${endNodeName} 的路径，共 ${pathNodes.length} 个节点`);
+                    } else {
+                        showResult(`未找到从 ${startNodeName} 到 ${endNodeName} 的路径`);
+                    }
+                },
+                error: function(error) {
+                    showResult(`查询失败: ${error.responseText}`);
+                }
+            });
+        }
+        
+        // 查找指定类型的节点
+        function searchNodesByType(type) {
+            $.ajax({
+                url: `/api/knowledge-graph/nodes/type/${type}`,
+                method: 'GET',
+                success: function(response) {
+                    if (response.code === 0 && response.data) {
+                        const typeNodes = response.data;
+                        clearGraph();
+                        
+                        // 添加所有节点
+                        typeNodes.forEach(node => {
+                            addNodeToGraph(node);
+                        });
+                        
+                        showResult(`找到 ${typeNodes.length} 个类型为 ${type} 的节点`);
+                    } else {
+                        showResult(`未找到类型为 ${type} 的节点`);
+                    }
+                },
+                error: function(error) {
+                    showResult(`查询失败: ${error.responseText}`);
+                }
+            });
+        }
+        
+        // 执行推理
+        function performReasoning(reasoningType, name) {
+            $.ajax({
+                url: `/api/knowledge-graph/reasoning/${reasoningType}?${reasoningType === 'principle-applications' ? 'principleName' : 'patternName'}=${encodeURIComponent(name)}`,
+                method: 'GET',
+                success: function(response) {
+                    if (response.code === 0 && response.data) {
+                        const results = response.data;
+                        
+                        // 显示推理结果
+                        let resultHtml = '<table><tr>';
+                        
+                        // 表头
+                        if (results.length > 0) {
+                            const keys = Object.keys(results[0]);
+                            keys.forEach(key => {
+                                resultHtml += `<th>${key}</th>`;
+                            });
+                            resultHtml += '</tr>';
+                            
+                            // 表内容
+                            results.forEach(result => {
+                                resultHtml += '<tr>';
+                                keys.forEach(key => {
+                                    resultHtml += `<td>${result[key] || ''}</td>`;
+                                });
+                                resultHtml += '</tr>';
+                            });
+                        }
+                        
+                        resultHtml += '</table>';
+                        showResult(resultHtml);
+                    } else {
+                        showResult(`未找到推理结果`);
+                    }
+                },
+                error: function(error) {
+                    showResult(`推理失败: ${error.responseText}`);
+                }
+            });
+        }
+        
+        // 添加节点到图谱
+        function addNodeToGraph(node) {
+            // 检查节点是否已存在
+            if (!nodes.get(node.id)) {
+                // 根据节点类型设置颜色
+                let color;
+                switch(node.type) {
+                    case 'CONCEPT':
+                        color = '#1890ff';
+                        break;
+                    case 'ENTRY':
+                        color = '#52c41a';
+                        break;
+                    case 'CATEGORY':
+                        color = '#722ed1';
+                        break;
+                    case 'ENTITY':
+                        color = '#fa8c16';
+                        break;
+                    case 'PDF':
+                        color = '#f5222d';
+                        break;
+                    case 'VIDEO':
+                        color = '#eb2f96';
+                        break;
+                    default:
+                        color = '#666666';
+                }
+                
+                nodes.add({
+                    id: node.id,
+                    label: node.name,
+                    title: node.description || node.name,
+                    color: color,
+                    group: node.type
+                });
+            }
+        }
+        
+        // 清空图谱
+        function clearGraph() {
+            nodes.clear();
+            edges.clear();
+        }
+        
+        // 显示结果
+        function showResult(content) {
+            $('#result-container').html(content);
+        }
+        
+        // 文档就绪
+        $(document).ready(function() {
+            // 初始化图谱
+            initGraph();
+            
+            // 切换搜索类型
+            $('#search-type').change(function() {
+                const type = $(this).val();
+                $('.search-panel').hide();
+                
+                switch(type) {
+                    case 'node':
+                        $('#node-search').show();
+                        break;
+                    case 'path':
+                        $('#path-search').show();
+                        break;
+                    case 'type':
+                        $('#type-search').show();
+                        break;
+                    case 'reasoning':
+                        $('#reasoning-panel').show();
+                        break;
+                }
+            });
+            
+            // 搜索节点
+            $('#search-node-btn').click(function() {
+                const nodeName = $('#node-name').val().trim();
+                if (nodeName) {
+                    searchNode(nodeName);
+                } else {
+                    showResult('请输入节点名称');
+                }
+            });
+            
+            // 查找相关节点
+            $('#search-related-btn').click(function() {
+                const nodeName = $('#node-name').val().trim();
+                if (nodeName) {
+                    // 先查找节点
+                    $.ajax({
+                        url: `/api/knowledge-graph/nodes?name=${encodeURIComponent(nodeName)}`,
+                        method: 'GET',
+                        success: function(response) {
+                            if (response.code === 0 && response.data) {
+                                fetchRelatedNodes(response.data.id);
+                            } else {
+                                showResult(`未找到节点: ${nodeName}`);
+                            }
+                        },
+                        error: function(error) {
+                            showResult(`搜索失败: ${error.responseText}`);
+                        }
+                    });
+                } else {
+                    showResult('请输入节点名称');
+                }
+            });
+            
+            // 查找路径
+            $('#search-path-btn').click(function() {
+                const startNode = $('#start-node').val().trim();
+                const endNode = $('#end-node').val().trim();
+                
+                if (startNode && endNode) {
+                    searchPath(startNode, endNode);
+                } else {
+                    showResult('请输入起始节点和终止节点名称');
+                }
+            });
+            
+            // 查找指定类型节点
+            $('#search-type-btn').click(function() {
+                const nodeType = $('#node-type').val();
+                searchNodesByType(nodeType);
+            });
+            
+            // 执行推理
+            $('#reasoning-btn').click(function() {
+                const reasoningType = $('#reasoning-type').val();
+                const name = $('#reasoning-name').val().trim();
+                
+                if (name) {
+                    performReasoning(reasoningType, name);
+                } else {
+                    showResult('请输入名称');
+                }
+            });
+        });
+    </script>
+</body>
+</html> 

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库PDF上传测试</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .container {
+            background-color: #f5f5f5;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="file"], select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #1890ff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #40a9ff;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #f6ffed;
+            border: 1px solid #b7eb8f;
+        }
+        .error {
+            background-color: #fff2f0;
+            border: 1px solid #ffccc7;
+        }
+        #searchForm {
+            margin-top: 30px;
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>知识库PDF上传测试</h1>
+    
+    <div class="container">
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="file">选择PDF文件：</label>
+                <input type="file" id="file" name="file" accept=".pdf" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="category">选择分类：</label>
+                <select id="category" name="category" required>
+                    <option value="软件工程">软件工程</option>
+                    <option value="设计模式">设计模式</option>
+                    <option value="UML">UML</option>
+                    <option value="测试">测试</option>
+                    <option value="需求分析">需求分析</option>
+                </select>
+            </div>
+            
+            <button type="submit">上传并添加到知识库</button>
+        </form>
+        
+        <div id="uploadResult" class="result" style="display: none;"></div>
+        
+        <div id="searchForm">
+            <h2>测试语义搜索</h2>
+            <div class="form-group">
+                <label for="query">搜索问题：</label>
+                <input type="text" id="query" name="query" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            
+            <button type="button" id="searchButton">搜索</button>
+            
+            <div id="searchResult" class="result" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            var resultDiv = document.getElementById('uploadResult');
+            
+            resultDiv.innerHTML = '上传中，请稍候...';
+            resultDiv.className = 'result';
+            resultDiv.style.display = 'block';
+
+            console.log('准备上传文件:', this.file.files[0].name);
+            console.log('分类:', this.category.value);
+            
+            // 获取表单数据
+            var formData = new FormData();
+            formData.append("file", this.file.files[0]);
+            formData.append("category", this.category.value);
+            
+            // 请确保服务器已启动且URL正确
+            fetch('/knowledgebase/upload-pdf', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP错误: ${response.status} - ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.code === 0) {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = '<strong>成功：</strong> ' + data.message;
+                    // 清空文件输入框，方便下次上传
+                    document.getElementById('file').value = '';
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = '<strong>错误：</strong> ' + (data.message || '未知错误');
+                }
+            })
+            .catch(error => {
+                console.error('上传错误:', error);
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = '<strong>错误：</strong> ' + (error.message || '网络错误，请检查服务器连接');
+            });
+        });
+        
+        document.getElementById('searchButton').addEventListener('click', function() {
+            var query = document.getElementById('query').value;
+            var resultDiv = document.getElementById('searchResult');
+            
+            if (!query) {
+                alert('请输入搜索问题');
+                return;
+            }
+            
+            resultDiv.innerHTML = '搜索中，请稍候...';
+            resultDiv.className = 'result';
+            resultDiv.style.display = 'block';
+            
+            fetch('/knowledgebase/search-test?query=' + encodeURIComponent(query))
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP错误: ${response.status} - ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.code === 0 && data.data && data.data.length > 0) {
+                    resultDiv.className = 'result success';
+                    var html = '<strong>找到 ' + data.data.length + ' 个相关结果：</strong><br><br>';
+                    
+                    data.data.forEach(function(item, index) {
+                        html += '<div style="margin-bottom: 15px; padding: 10px; background-color: #f9f9f9; border-radius: 4px;">';
+                        html += '<div><strong>结果 #' + (index + 1) + '</strong></div>';
+                        html += '<div style="margin-top: 5px;"><strong>内容：</strong> ' + item.text + '</div>';
+                        
+                        if (item.metadata) {
+                            html += '<div style="margin-top: 5px; font-size: 12px; color: #666;">';
+                            html += '<strong>元数据：</strong> ';
+                            for (var key in item.metadata) {
+                                html += key + ': ' + item.metadata[key] + '; ';
+                            }
+                            html += '</div>';
+                        }
+                        
+                        html += '</div>';
+                    });
+                    
+                    resultDiv.innerHTML = html;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = '<strong>未找到相关结果或出错：</strong> ' + (data.message || '请尝试其他搜索词');
+                }
+            })
+            .catch(error => {
+                console.error('搜索错误:', error);
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = '<strong>错误：</strong> ' + (error.message || '网络错误，请检查服务器连接');
+            });
+        });
+    </script>
+</body>
+</html> 
