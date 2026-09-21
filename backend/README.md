@@ -31,21 +31,21 @@
 │   │   │   │   │   │   ├──dto
 │   │   │   │   │   │   ├──entity
 │   │   │   │   │   │   ├──mapper
-│   │   │   │   │   │   └──sevice
+│   │   │   │   │   │   └──service
 │   │   │   │   │   │      └──impl
 │   │   │   │   │   ├── chat
 │   │   │   │   │   │   ├──controller
 │   │   │   │   │   │   ├──dto
 │   │   │   │   │   │   ├──entity
 │   │   │   │   │   │   ├──mapper
-│   │   │   │   │   │   └──sevice
+│   │   │   │   │   │   └──service
 │   │   │   │   │   │      └──impl
 │   │   │   │   │   ├── user
 │   │   │   │   │   │   ├──controller
 │   │   │   │   │   │   ├──dto
 │   │   │   │   │   │   ├──entity
 │   │   │   │   │   │   ├──mapper
-│   │   │   │   │   │   └──sevice
+│   │   │   │   │   │   └──service
 │   │   │   │   │   │      └──impl
 │   │   └──resources
 ```

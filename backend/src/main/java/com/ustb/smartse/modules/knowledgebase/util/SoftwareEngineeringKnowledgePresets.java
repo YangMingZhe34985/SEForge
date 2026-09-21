@@ -1,4 +1,4 @@
-package com.ustb.smartse.modules.knowledgebase.utils;
+package com.ustb.smartse.modules.knowledgebase.util;
 
 import com.ustb.smartse.modules.knowledgebase.dto.BatchImportDTO;
 import com.ustb.smartse.modules.knowledgebase.dto.ConceptNodeDTO;

@@ -1,4 +1,4 @@
-package com.USTB.smartse;
+package com.ustb.smartse;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

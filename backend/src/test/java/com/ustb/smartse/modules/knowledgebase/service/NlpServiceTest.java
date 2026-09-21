@@ -1,6 +1,5 @@
-package com.USTB.smartse.modules.knowledgebase.service;
+package com.ustb.smartse.modules.knowledgebase.service;
 
-import com.ustb.smartse.modules.knowledgebase.service.NlpService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

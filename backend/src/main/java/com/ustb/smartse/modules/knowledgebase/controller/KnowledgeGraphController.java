@@ -8,7 +8,7 @@ import com.ustb.smartse.modules.knowledgebase.entity.neo4j.KnowledgeNode;
 import com.ustb.smartse.modules.knowledgebase.entity.neo4j.KnowledgeRelation;
 import com.ustb.smartse.modules.knowledgebase.service.JenaReasoningService;
 import com.ustb.smartse.modules.knowledgebase.service.KnowledgeGraphService;
-import com.ustb.smartse.modules.knowledgebase.utils.SoftwareEngineeringKnowledgePresets;
+import com.ustb.smartse.modules.knowledgebase.util.SoftwareEngineeringKnowledgePresets;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;

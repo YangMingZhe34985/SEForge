@@ -5,7 +5,6 @@ import com.ustb.smartse.common.Result;
 import com.ustb.smartse.modules.user.dto.UserProfileUpdateRequest;
 import com.ustb.smartse.modules.user.dto.UserRegisterRequest;
 import com.ustb.smartse.modules.user.entity.User;
-import com.ustb.smartse.common.Result;
 import com.ustb.smartse.modules.user.dto.LoginRequest;
 import com.ustb.smartse.modules.user.dto.LoginResponse;
 import com.ustb.smartse.modules.user.entity.UserProfile;
@@ -13,8 +12,6 @@ import com.ustb.smartse.modules.user.service.UserProfileService;
 import com.ustb.smartse.modules.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
-
-import java.security.Timestamp;
 
 @RestController
 @RequestMapping("/api/user")
