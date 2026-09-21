@@ -114,9 +114,9 @@ import Sidebar from '@/components/Sidebar.vue';
 import ChatContainer from '@/components/ChatContainer.vue';
 import ExerciseContainer from '@/components/ExerciseContainer.vue';
 import KnowledgeGraph from '@/components/KnowledgeGraph.vue';
-import RenameDialog from '@/components/Dialog/RenameDialog.vue';
-import DeleteDialog from '@/components/Dialog/DeleteDialog.vue';
-import ProfileModal from '@/components/Dialog/ProfileModal.vue';
+import RenameDialog from '@/components/dialog/RenameDialog.vue';
+import DeleteDialog from '@/components/dialog/DeleteDialog.vue';
+import ProfileModal from '@/components/dialog/ProfileModal.vue';
 import CodeQuality from '@/components/CodeQuality.vue';
 
 export default {
@@ -222,6 +222,20 @@ export default {
       this.setupDragHandlers();
     });
   },
+  beforeUnmount() {
+    // 清理 document 级监听器，防止组件卸载后泄漏
+    if (this.docDragHandlers) {
+      document.removeEventListener('mousemove', this.docDragHandlers.mousemove);
+      document.removeEventListener('mouseup', this.docDragHandlers.mouseup);
+      document.removeEventListener('touchmove', this.docDragHandlers.touchmove);
+      document.removeEventListener('touchend', this.docDragHandlers.touchend);
+      this.docDragHandlers = null;
+    }
+    if (this.docClickOutsideHandler) {
+      document.removeEventListener('click', this.docClickOutsideHandler);
+      this.docClickOutsideHandler = null;
+    }
+  },
   methods: {
     configureMarked() {
       const renderer = new marked.Renderer();
@@ -274,8 +288,6 @@ export default {
           localStorage.removeItem('lastActiveSessionId');
         }
 
-        this.setupDragHandlers();
-        this.setupClickOutsideHandlers();
         this.setupDragHandlers();
         this.setupClickOutsideHandlers();
         this.scrollToBottom();
@@ -357,7 +369,15 @@ export default {
     setDefaultUserInfo() {
       // 从localStorage获取基本信息
       const userInfoStr = localStorage.getItem("userInfo");
-      const cached = userInfoStr ? JSON.parse(userInfoStr) : {};
+      let cached = {};
+      if (userInfoStr) {
+        try {
+          cached = JSON.parse(userInfoStr);
+        } catch (e) {
+          // 缓存损坏时回退默认值，避免中断页面初始化
+          console.error('解析 userInfo 缓存失败:', e);
+        }
+      }
 
       this.userInfo = {
         nickname: cached.username || "新用户", // 使用用户名作为默认昵称
@@ -458,7 +478,6 @@ export default {
         });
 
         if (response.data.code === 200) {
-          console.log('Raw chat histories:', response.data.data);
 
           // 确保返回的数据是数组
           const sessions = Array.isArray(response.data.data) ? response.data.data : [];
@@ -470,7 +489,6 @@ export default {
             senderType: session.senderType || 'user'
           }));
 
-          console.log('Mapped chat histories:', this.chatHistories);
 
           // 如果有历史记录，加载第一个会话
           if (this.chatHistories.length > 0) {
@@ -567,7 +585,6 @@ export default {
       }
     },
     goToProfileSettings() {
-      console.log('goToProfileSettings called'); // 调试信息
       this.showProfileModal = true;
       this.showUserCard = false; // 关闭用户卡片
       // 复制当前用户信息到临时对象
@@ -736,13 +753,11 @@ export default {
       this.isMobileMenuOpen = !this.isMobileMenuOpen;
     },
     toggleUserCard(event) {
-      console.log('toggleUserCard called'); // 调试信息
       event = event || {};
       if (event.stopPropagation) {
         event.stopPropagation();
       }
       this.showUserCard = !this.showUserCard;
-      console.log('showUserCard:', this.showUserCard); // 查看状态变化
     },
     closeUserCard(event) {
       event = event || {};
@@ -776,7 +791,6 @@ export default {
         }
         // 如果点击的是当前活动的会话，不需要重新加载
         if (index === this.activeHistoryIndex) {
-          console.log('Already on this session, skipping reload');
           return;
         }
 
@@ -786,7 +800,6 @@ export default {
           return;
         }
 
-        console.log('Switching to session:', selectedHistory);
 
         this.activeHistoryIndex = index;
         this.currentTopic = selectedHistory.title || '新会话';
@@ -833,7 +846,6 @@ export default {
         if (response.data.code === 200) {
           const sessionId = response.data.data.sessionId;
           localStorage.setItem('currentSessionId', sessionId);
-          console.log('Created new session with ID:', sessionId);
 
           const newSession = {
             sessionId: sessionId,
@@ -874,7 +886,6 @@ export default {
         // 检查是否有文件
         for (const [key, value] of formData.entries()) {
           if (value instanceof File) {
-            console.log(`找到文件: ${key}, 文件名: ${value.name}, 类型: ${value.type}, 大小: ${value.size}字节`);
             files.push(value);
           }
         }
@@ -883,7 +894,6 @@ export default {
 
         // 验证是否有消息内容或文件
         if (!message.trim() && !hasFiles) {
-          console.log('没有消息或文件，不发送请求');
           return;
         }
 
@@ -929,24 +939,13 @@ export default {
         if (hasFiles) {
           for (const file of files) {
             if (file.type.startsWith('image/')) {
-              console.log(`添加图片到请求: ${file.name}`);
               apiFormData.append('image', file);
             } else {
-              console.log(`添加文件到请求: ${file.name}`);
               apiFormData.append('file', file);
             }
           }
         }
 
-        // 打印发送的表单数据内容（调试用）
-        console.log('准备发送请求，表单数据包含:');
-        for (const [key, value] of apiFormData.entries()) {
-          if (value instanceof File) {
-            console.log(`- ${key}: 文件(${value.name}, ${value.type}, ${value.size}字节)`);
-          } else {
-            console.log(`- ${key}: ${value}`);
-          }
-        }
 
         this.isLoading = true;
 
@@ -1089,24 +1088,19 @@ export default {
     },
     uploadFile() {
       // 文件上传逻辑
-      console.log('上传文件');
     },
     uploadImage() {
       // 图片上传逻辑
-      console.log('上传图片');
     },
     uploadCode() {
       // 代码上传逻辑
-      console.log('上传代码');
     },
     startRecording() {
       // 录音逻辑
-      console.log('开始录音');
     },
     setupDragHandlers() {
       this.$nextTick(() => {
         const inputContainer = this.$refs.inputContainer;
-        const chatContainer = this.$refs.chatContainer;
 
         if (!inputContainer) return;
 
@@ -1126,35 +1120,12 @@ export default {
         dragHandle.style.cursor = 'ns-resize';
         dragHandle.style.zIndex = '10';
         inputContainer.prepend(dragHandle);
-        console.log("Drag handle created:", dragHandle);
         // 拖动开始
         dragHandle.addEventListener('mousedown', (e) => {
-          console.log("Drag started!"); // 检查是否触发
           this.isDragging = true;
           this.startY = e.clientY;
           this.startHeight = parseInt(window.getComputedStyle(inputContainer).height, 10);
           e.preventDefault();
-        });
-
-        // 拖动过程
-        document.addEventListener('mousemove', (e) => {
-          if (!this.isDragging) return;
-
-          const deltaY = this.startY - e.clientY;
-          const newHeight = this.startHeight + deltaY;
-
-          // 限制最小和最大高度
-          if (newHeight > 80 && newHeight < 300) {
-            inputContainer.style.height = newHeight + 'px';
-            if (chatContainer) {
-              chatContainer.style.marginBottom = (newHeight + 20) + 'px';
-            }
-          }
-        });
-
-        // 拖动结束
-        document.addEventListener('mouseup', () => {
-          this.isDragging = false;
         });
 
         // 触摸设备支持
@@ -1165,28 +1136,44 @@ export default {
           e.preventDefault();
         });
 
-        document.addEventListener('touchmove', (e) => {
-          if (!this.isDragging) return;
+        // document 级监听器仅在组件实例上注册一次，避免 updated() 反复触发导致累积；
+        // 回调内通过 $refs 动态获取当前 DOM，避免闭包持有已失效的元素引用
+        if (!this.docDragHandlers) {
+          const applyDrag = (clientY) => {
+            if (!this.isDragging) return;
+            const container = this.$refs.inputContainer;
+            const chat = this.$refs.chatContainer;
+            if (!container) return;
 
-          const deltaY = this.startY - e.touches[0].clientY;
-          const newHeight = this.startHeight + deltaY;
+            const deltaY = this.startY - clientY;
+            const newHeight = this.startHeight + deltaY;
 
-          if (newHeight > 80 && newHeight < 300) {
-            inputContainer.style.height = newHeight + 'px';
-            if (chatContainer) {
-              chatContainer.style.marginBottom = (newHeight + 20) + 'px';
+            // 限制最小和最大高度
+            if (newHeight > 80 && newHeight < 300) {
+              container.style.height = newHeight + 'px';
+              if (chat) {
+                chat.style.marginBottom = (newHeight + 20) + 'px';
+              }
             }
-          }
-        });
-
-        document.addEventListener('touchend', () => {
-          this.isDragging = false;
-        });
+          };
+          this.docDragHandlers = {
+            mousemove: (e) => applyDrag(e.clientY),
+            mouseup: () => { this.isDragging = false; },
+            touchmove: (e) => applyDrag(e.touches[0].clientY),
+            touchend: () => { this.isDragging = false; }
+          };
+          document.addEventListener('mousemove', this.docDragHandlers.mousemove);
+          document.addEventListener('mouseup', this.docDragHandlers.mouseup);
+          document.addEventListener('touchmove', this.docDragHandlers.touchmove);
+          document.addEventListener('touchend', this.docDragHandlers.touchend);
+        }
       });
     },
     setupClickOutsideHandlers() {
-      // 点击用户卡片外部关闭卡片
-      document.addEventListener('click', (e) => {
+      // document 级点击监听仅注册一次，避免重复调用导致累积
+      if (this.docClickOutsideHandler) return;
+      // 点击用户卡片外部关闭卡片；移动端点击侧边栏外部收起菜单
+      this.docClickOutsideHandler = (e) => {
         const userCard = document.getElementById('userCard');
         const userProfileButton = document.getElementById('userProfileButton');
 
@@ -1206,7 +1193,8 @@ export default {
             e.target !== document.getElementById('mobileMenuToggle')) {
           this.isMobileMenuOpen = false;
         }
-      });
+      };
+      document.addEventListener('click', this.docClickOutsideHandler);
     },
     scrollToBottom() {
       const chatContainer = this.$refs.chatContainer;
