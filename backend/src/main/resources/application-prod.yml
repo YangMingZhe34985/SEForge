@@ -1,0 +1,26 @@
+server:
+  error:
+    include-message: never
+    include-stacktrace: never
+  compression:
+    enabled: true
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+seforge:
+  security:
+    allowed-origins: ${SEFORGE_ALLOWED_ORIGINS:https://localhost}
+    secure-cookie: ${SESSION_COOKIE_SECURE:true}
+
+management:
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    root: INFO
+    com.ustb.seforge: INFO

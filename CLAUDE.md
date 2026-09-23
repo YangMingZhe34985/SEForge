@@ -1,327 +1,938 @@
-# SmartSE Repository Restructuring Instructions
+# SmartSE Codebase Standardization & Safe Refactoring
 
 ## 1. Task Overview
 
-当前 SmartSE 项目由 Spring Boot 后端与 Vue/Vite 前端组成。
+SmartSE 最初由约 5 名开发者协作完成。
 
-本次任务的目标是对项目进行一次 **仓库级重构与目录重新编排**，将前后端统一整理到同一个 Git 仓库中，为后续 SmartSE 功能重构、Java/Spring Boot 学习以及 GitHub 项目展示做好准备。
+由于早期开发阶段没有建立统一的工程规范，目前项目中可能存在：
 
-本阶段重点是：
+* 文件命名风格不统一；
+* Java 类、方法、变量命名不统一；
+* Vue 组件及前端文件命名不统一；
+* 包结构存在历史遗留问题；
+* API、DTO、VO 等命名不一致；
+* 相似功能采用不同代码风格；
+* 重复代码；
+* 异常处理方式不统一；
+* 空值处理不健壮；
+* 边界条件处理不足；
+* 部分代码存在潜在 Bug；
+* 部分实现存在明显稳定性或可维护性问题。
 
-1. 重新整理项目目录；
-2. 将前端、后端纳入统一仓库；
-3. 清理旧 Git 环境；
-4. 初始化全新的 Git 仓库；
-5. 完善仓库级配置文件；
-6. 保证整理后的前后端仍能够独立开发和运行。
+本阶段目标：
 
-**本阶段原则上不要修改业务逻辑。**
+> 在保持 SmartSE 现有业务功能和整体架构基本不变的前提下，对整个项目进行一次系统性的代码规范化、安全重构和质量检查。
+
+允许修改代码。
+
+但必须遵循：
+
+> **Preserve behavior unless fixing a confirmed defect.**
+
+不要为了“代码看起来更现代”而改变正常业务行为。
 
 ---
 
-# 2. Target Repository Structure
+# 2. Scope
 
-请将项目整理为类似以下结构：
-
-```text
-SmartSE/
-├── backend/
-│   ├── src/
-│   ├── pom.xml
-│   └── ...
-│
-├── frontend/
-│   ├── src/
-│   ├── public/
-│   ├── package.json
-│   ├── vite.config.*
-│   └── ...
-│
-├── docs/
-│   └── ...
-│
-├── .gitignore
-├── README.md
-└── CLAUDE.md
-```
-
-如果当前项目中存在 Docker、Nginx、部署脚本等内容，可根据实际情况保留，例如：
+扫描整个 SmartSE Monorepo：
 
 ```text
 SmartSE/
 ├── backend/
 ├── frontend/
 ├── docs/
-├── deploy/
-├── scripts/
-├── docker-compose.yml
-├── .env.example
-├── .gitignore
+├── ...
 ├── README.md
 └── CLAUDE.md
 ```
 
-不要为了严格匹配上述示例而破坏当前项目已有的合理结构。
-
-应首先检查现有文件，再决定最终目录组织方式。
-
----
-
-# 3. Frontend
-
-识别现有 Vue/Vite 前端项目，并统一移动到：
-
-```text
-frontend/
-```
-
-需要保留：
-
-* `src/`
-* `public/`
-* `package.json`
-* package lock file
-* Vite 配置
-* TypeScript/JavaScript 配置
-* ESLint 等工程配置
-* 前端运行所需的其他文件
-
-不要保留：
-
-* `node_modules/`
-* `dist/`
-* 临时构建文件
-* IDE 缓存
-* 明显无用的开发临时文件
-
-移动后检查路径引用以及配置文件。
-
-如果因为目录移动导致配置中的相对路径失效，可以进行必要的 **路径修复**，但不要借此修改业务逻辑。
-
----
-
-# 4. Backend
-
-识别现有 Spring Boot 后端项目，并统一移动到：
+重点检查：
 
 ```text
 backend/
+frontend/
 ```
 
-需要保留：
+包括：
 
-* `src/main`
-* `src/test`
-* `pom.xml` 或 Gradle 配置
-* Maven Wrapper / Gradle Wrapper（如果存在）
-* application 配置
-* 后端运行所需的其他资源
-
-不要保留：
-
-```text
-target/
-build/
-*.class
-```
-
-以及其他可重新生成的构建产物。
-
-如果目录移动导致配置文件中的相对路径失效，可以进行必要修复。
-
-除此之外：
-
-**不要修改 Java 业务逻辑。**
+* 文件名；
+* 目录名；
+* Java package；
+* Java class；
+* method；
+* variable；
+* constant；
+* Vue component；
+* TypeScript / JavaScript 文件；
+* API module；
+* composable；
+* utility；
+* store；
+* DTO / VO / Entity；
+* Controller / Service / Repository / Mapper；
+* 配置文件；
+* 测试文件。
 
 ---
 
-# 5. Git History Reset
+# 3. General Principles
 
-本次重构需要 **完全清除旧 Git 信息**。
-
-用户已经明确确认并授权执行此操作，无需再次询问。
-
-删除当前项目及被合并进来的前后端项目中的所有旧 Git 元数据，包括可能存在的：
+所有修改遵循以下优先级：
 
 ```text
-.git/
+Correctness
+    ↓
+Stability
+    ↓
+Consistency
+    ↓
+Maintainability
+    ↓
+Readability
+    ↓
+Style
 ```
 
-尤其注意检查：
+不要为了统一风格而牺牲正确性。
 
-```text
-SmartSE/.git
-frontend/.git
-backend/.git
-```
+不要为了减少代码行数而降低可读性。
 
-以及其他子目录中可能存在的嵌套 Git 仓库。
-
-目标是：
-
-> SmartSE 最终只能存在一个新的根级 Git Repository。
-
-旧 Git commit history、branch、remote、tag 等信息均不需要保留。
+不要为了使用某种设计模式而增加不必要复杂度。
 
 ---
 
-# 6. Initialize New Git Repository
+# 4. Naming Standardization
 
-完成目录整理并确认旧 `.git` 已清除后，在 SmartSE 根目录重新初始化 Git：
+首先扫描整个项目，识别当前存在的命名风格。
 
-```bash
-git init
-```
+在执行批量修改之前：
 
-默认分支统一设置为：
+1. 分析当前主流命名方式；
+2. 判断哪些属于合理命名；
+3. 找出明显不一致的部分；
+4. 建立统一规则；
+5. 再进行修改。
+
+不要机械重命名所有文件。
+
+---
+
+# 5. Backend Naming Convention
+
+Spring Boot 后端统一采用 Java 常见命名规范。
+
+## 5.1 Packages
+
+package 使用全小写：
 
 ```text
-main
+controller
+service
+repository
+mapper
+entity
+dto
+vo
+config
+exception
+security
+util
+```
+
+避免：
+
+```text
+Controller
+Services
+Utils
+DAO
+serviceImpls
+```
+
+除非现有框架或项目结构确实需要。
+
+---
+
+## 5.2 Classes
+
+使用 PascalCase：
+
+```java
+UserController
+UserService
+UserRepository
+UserDTO
+UserVO
+UserEntity
+GlobalExceptionHandler
+```
+
+避免：
+
+```text
+userController
+user_controller
+USERController
+Usercontroller
+```
+
+---
+
+## 5.3 Methods and Variables
+
+使用 camelCase：
+
+```java
+getUserById()
+createProject()
+currentUser
+projectId
+userList
+```
+
+避免：
+
+```text
+get_user()
+GetUser()
+project_id
+UserList
+```
+
+---
+
+## 5.4 Constants
+
+使用：
+
+```java
+MAX_RETRY_COUNT
+DEFAULT_PAGE_SIZE
+TOKEN_EXPIRE_TIME
+```
+
+即：
+
+```text
+UPPER_SNAKE_CASE
+```
+
+---
+
+# 6. Spring Boot Layer Naming
+
+尽量保持统一：
+
+```text
+XxxController
+XxxService
+XxxServiceImpl
+XxxRepository
+XxxMapper
+XxxDTO
+XxxVO
+XxxEntity
+XxxException
+```
+
+如果项目当前使用：
+
+```text
+Service + ServiceImpl
+```
+
+则保持这一体系。
+
+如果当前并未使用 `ServiceImpl` 模式，不要为了形式统一强行引入。
+
+统一应以：
+
+> 当前项目主流架构 + Spring Boot 常见实践
+
+为依据。
+
+---
+
+# 7. DTO / VO / Entity
+
+检查以下常见问题：
+
+```text
+UserDto
+UserDTO
+userDTO
+UserDataDTO
+```
+
+统一为：
+
+```text
+UserDTO
+```
+
+类似：
+
+```text
+UserVO
+UserEntity
+```
+
+如果 Request / Response 模型已经存在，也可以保留：
+
+```text
+CreateUserRequest
+UpdateUserRequest
+UserResponse
+```
+
+不要为了统一名称而破坏已有清晰语义。
+
+---
+
+# 8. Frontend Naming Convention
+
+SmartSE 前端为 Vue / Vite 项目。
+
+优先遵循 Vue 社区常见实践。
+
+---
+
+# 9. Vue Components
+
+Vue Component 文件统一使用 PascalCase：
+
+```text
+UserProfile.vue
+ProjectList.vue
+LoginForm.vue
+NavigationBar.vue
+```
+
+避免同时存在：
+
+```text
+userProfile.vue
+user-profile.vue
+Userprofile.vue
+user_profile.vue
+```
+
+对于组件目录：
+
+```text
+components/
+views/
+layouts/
+```
+
+保持整体一致。
+
+---
+
+# 10. TypeScript / JavaScript
+
+变量和函数：
+
+```text
+camelCase
 ```
 
 例如：
 
-```bash
-git branch -M main
+```ts
+currentUser
+projectList
+fetchUserInfo()
+createProject()
 ```
 
-不要自动添加 GitHub remote。
+类型：
 
-不要执行：
-
-```bash
-git push
+```text
+PascalCase
 ```
 
-GitHub Remote 将由用户后续手动配置。
+例如：
+
+```ts
+User
+Project
+ApiResponse
+UserProfile
+```
+
+常量：
+
+```text
+UPPER_SNAKE_CASE
+```
+
+或者如果项目已经大量使用：
+
+```ts
+const apiBaseUrl
+```
+
+则根据语义决定，不要机械转换所有 `const`。
+
+只有真正的全局常量才需要：
+
+```text
+UPPER_SNAKE_CASE
+```
 
 ---
 
-# 7. .gitignore
+# 11. Frontend Modules
 
-重新生成或整理根目录：
+API、utility、composable 等文件统一风格。
 
-```text
-.gitignore
-```
-
-至少覆盖以下内容。
-
-## Java / Spring Boot
-
-```gitignore
-target/
-*.class
-*.jar
-*.war
-```
-
-注意：如果项目存在需要版本控制的特殊 JAR，请根据实际情况判断，不要机械删除。
-
-## Node / Vue / Vite
-
-```gitignore
-node_modules/
-dist/
-.vite/
-```
-
-## IDE
-
-```gitignore
-.idea/
-.vscode/
-*.iml
-```
-
-如果 `.vscode` 中存在值得共享的项目级配置，可以保留必要文件，而不是简单忽略整个目录。
-
-## Environment
-
-```gitignore
-.env
-.env.local
-.env.*.local
-```
-
-必须避免提交：
-
-* API Key
-* Password
-* Token
-* Database Password
-* JWT Secret
-* 私有服务器信息
-* 其他 Credentials
-
-如果项目依赖环境变量，应创建：
+例如：
 
 ```text
-.env.example
+api/
+  user.ts
+  project.ts
+
+utils/
+  request.ts
+  formatDate.ts
+
+composables/
+  useAuth.ts
+  useProject.ts
 ```
 
-其中只能保留变量名称和安全的示例值。
+不要出现无意义名称：
+
+```text
+utils2.ts
+common1.ts
+test123.ts
+aaa.ts
+temp.ts
+newFile.ts
+```
+
+如果发现此类文件，分析用途后重命名。
 
 ---
 
-# 8. Sensitive Information Audit
+# 12. Rename Safety
 
-在初始化新仓库后，对准备进入 Git 的文件执行一次敏感信息检查。
+任何文件、class、method 或 symbol 重命名时：
 
-重点搜索：
+**必须同步更新所有引用。**
+
+包括：
+
+* Java import；
+* Spring Bean 引用；
+* package；
+* Vue import；
+* TypeScript import；
+* router；
+* store；
+* API；
+* test；
+* configuration；
+* reflection；
+* serialization；
+* JSON mapping；
+* database mapping；
+* component registration。
+
+重命名后必须搜索旧名称：
 
 ```text
-password
-secret
-token
-api_key
-apikey
-access_key
-private_key
-Authorization
-Bearer
+OldName
+oldName
+old_name
 ```
 
-以及常见数据库连接配置。
+确认不存在遗漏引用。
 
-如果发现疑似真实凭据：
+特别注意大小写修改。
 
-1. 不要将其提交到 Git；
-2. 优先改为环境变量；
-3. 在 `.env.example` 中提供安全示例；
-4. 在最终报告中明确指出。
+Windows 文件系统默认大小写不敏感。
 
-不要输出真实 Secret 的完整值。
+例如：
+
+```text
+userProfile.vue
+        ↓
+UserProfile.vue
+```
+
+必要时使用临时名称完成：
+
+```text
+userProfile.vue
+    ↓
+__temp__.vue
+    ↓
+UserProfile.vue
+```
+
+避免 Git 无法正确识别大小写重命名。
 
 ---
 
-# 9. README
+# 13. Bug Detection
 
-如果已有 README：
+在规范化过程中，同时检查明显 Bug。
 
-保留有价值的信息，并根据新的 Monorepo 结构修正明显失效的路径说明。
+允许主动修复能够合理确认的问题，例如：
 
-如果 README 缺失，可以创建一个简洁的基础 README，但本阶段不需要进行大规模文档重写。
+### Null / Undefined
 
-README 至少应能够说明：
-
-```text
-SmartSE
-├── frontend    Vue/Vite frontend
-└── backend     Spring Boot backend
+```java
+user.getName()
 ```
 
-并简单说明前后端如何启动。
+但 `user` 可能为空。
+
+或者：
+
+```ts
+response.data.user.name
+```
+
+其中中间对象可能不存在。
 
 ---
 
-# 10. Validation
+### Boundary Conditions
 
-目录整理完成后执行基本验证。
+例如：
 
-## Backend
+* 空列表；
+* 空字符串；
+* null；
+* undefined；
+* 非法 ID；
+* page < 0；
+* size <= 0；
+* 数组越界；
+* 空查询结果。
 
-根据项目实际构建工具执行，例如：
+---
+
+### Exception Handling
+
+检查：
+
+```java
+try {
+    ...
+} catch (Exception e) {
+}
+```
+
+等吞异常行为。
+
+避免：
+
+* catch 后什么都不做；
+* 返回错误的成功状态；
+* 丢失关键异常信息；
+* 向前端直接暴露 stack trace。
+
+---
+
+# 14. Backend Robustness
+
+重点检查 Spring Boot 后端：
+
+* Controller 参数校验；
+* Service 空值处理；
+* Repository 查询结果；
+* Optional 使用；
+* transaction；
+* exception handling；
+* resource closing；
+* concurrency；
+* authentication；
+* authorization；
+* SQL / ORM 查询；
+* pagination；
+* duplicate request；
+* invalid request；
+* HTTP status；
+* API response。
+
+对于明显问题可以修复。
+
+---
+
+# 15. Frontend Robustness
+
+重点检查：
+
+* API 请求失败；
+* Promise rejection；
+* loading 状态；
+* undefined；
+* null；
+* 空数据；
+* router 参数；
+* localStorage；
+* JSON parse；
+* async/await；
+* 生命周期；
+* event listener；
+* timer；
+* component unmount；
+* repeated requests。
+
+避免：
+
+```ts
+try {
+  ...
+} catch (e) {
+}
+```
+
+完全吞掉错误。
+
+---
+
+# 16. Async Code
+
+检查异步代码是否存在：
+
+* 未处理 Promise；
+* 忘记 await；
+* 不必要的串行 await；
+* race condition；
+* 重复请求；
+* loading 状态无法恢复；
+* exception 后状态未清理。
+
+例如：
+
+```ts
+loading.value = true
+
+try {
+  await request()
+} finally {
+  loading.value = false
+}
+```
+
+如果现有代码存在明显状态恢复问题，可以修复。
+
+---
+
+# 17. Security Issues
+
+如果扫描过程中发现明显安全问题，可以修复。
+
+重点关注：
+
+* 明文密码；
+* hard-coded token；
+* API Key；
+* SQL Injection；
+* 未校验用户输入；
+* JWT 校验错误；
+* 权限绕过；
+* 敏感信息日志；
+* 前端保存不应保存的敏感信息；
+* CORS 明显错误配置；
+* 文件上传缺乏基本校验。
+
+对于可能影响现有认证体系的重大安全修改，不要直接重构整个认证架构。
+
+记录问题并在最终报告中说明。
+
+---
+
+# 18. Code Duplication
+
+可以消除明显重复代码。
+
+例如多个 Controller / Service 中存在完全相同的：
+
+```text
+parameter validation
+response conversion
+date conversion
+error handling
+```
+
+可以提取公共方法。
+
+但是：
+
+> 不要为了 DRY 而过度抽象。
+
+只有重复逻辑明显、语义一致时才提取。
+
+---
+
+# 19. Dead Code
+
+识别：
+
+* 未使用 import；
+* 未使用变量；
+* 不可达代码；
+* 已确认没有引用的方法；
+* 明显遗留的调试代码；
+* console.log；
+* System.out.println；
+* 注释掉的大段旧代码。
+
+可以安全删除：
+
+```text
+unused imports
+unused local variables
+obvious debug output
+```
+
+对于无法确认是否仍有业务意义的 class / API / component：
+
+**不要删除。**
+
+在最终报告中记录即可。
+
+---
+
+# 20. Comments
+
+不要大量添加解释显而易见代码的注释。
+
+例如不要：
+
+```java
+// 获取用户
+User user = getUser();
+```
+
+注释应该解释：
+
+> Why
+
+而不是简单重复：
+
+> What
+
+可以清理：
+
+* 失效注释；
+* 与代码不一致的注释；
+* 大段注释掉的历史代码；
+* 无意义 TODO。
+
+对于仍然有效的 TODO，应保留。
+
+---
+
+# 21. Logging
+
+检查后端是否存在：
+
+```java
+System.out.println(...)
+e.printStackTrace()
+```
+
+如果项目已经使用日志框架，统一使用现有 logger。
+
+例如：
+
+```java
+log.info(...)
+log.warn(...)
+log.error(...)
+```
+
+不要在日志中输出：
+
+* password；
+* JWT；
+* token；
+* secret；
+* private information。
+
+---
+
+# 22. Formatting
+
+如果项目已经存在：
+
+```text
+ESLint
+Prettier
+Checkstyle
+Spotless
+EditorConfig
+```
+
+优先使用现有工具。
+
+不要随意引入大量新的 formatter 或 lint dependency。
+
+如果没有统一工具，本阶段优先完成代码本身的规范化，不要为了格式化引入复杂工程依赖。
+
+---
+
+# 23. Refactoring Permission
+
+本次允许进行：
+
+```text
+Rename
+Move
+Extract Method
+Simplify Condition
+Remove Duplication
+Improve Null Safety
+Improve Exception Handling
+Improve Async Handling
+Fix Confirmed Bug
+Remove Dead Local Code
+Improve Type Safety
+```
+
+---
+
+# 24. Refactoring Boundaries
+
+未经必要性证明，不要：
+
+* 重写整个模块；
+* 改变数据库 Schema；
+* 修改 API contract；
+* 更换 ORM；
+* 更换状态管理框架；
+* 更换 UI framework；
+* 重构整个 authentication system；
+* 引入微服务；
+* 引入新的复杂架构；
+* 大规模升级 dependency；
+* 改变业务规则；
+* 删除无法确认用途的功能。
+
+如果发现需要上述操作才能解决的问题：
+
+**记录，而不是擅自实施。**
+
+---
+
+# 25. API Compatibility
+
+尽可能保持现有 API contract。
+
+包括：
+
+```text
+URL
+HTTP Method
+Request Body
+Query Parameters
+Response Structure
+Status Code
+```
+
+如果发现 API 本身存在确定性 Bug，可以修复。
+
+但必须在最终报告中明确记录：
+
+```text
+Before
+After
+Reason
+Impact
+```
+
+---
+
+# 26. Database Compatibility
+
+默认：
+
+> 不修改数据库 Schema。
+
+除非存在极其明确且无需 migration 即可解决的问题。
+
+不要擅自：
+
+```text
+DROP TABLE
+DROP COLUMN
+RENAME COLUMN
+ALTER DATA TYPE
+```
+
+如果发现数据库设计问题，在最终报告中记录。
+
+---
+
+# 27. Incremental Workflow
+
+不要一次性对整个项目进行大量修改后才测试。
+
+按照以下方式执行：
+
+```text
+1. Scan
+   ↓
+2. Establish naming rules
+   ↓
+3. Backend naming cleanup
+   ↓
+4. Backend validation
+   ↓
+5. Frontend naming cleanup
+   ↓
+6. Frontend validation
+   ↓
+7. Robustness / bug fixes
+   ↓
+8. Full validation
+```
+
+每个阶段尽可能保持项目可构建。
+
+---
+
+# 28. Git Strategy
+
+本次允许修改大量文件。
+
+但修改应按照逻辑组织。
+
+如果需要创建 commit，推荐：
+
+```text
+refactor: standardize backend naming
+
+refactor: standardize frontend naming
+
+fix: improve backend robustness
+
+fix: improve frontend error handling
+
+chore: clean obsolete code
+```
+
+不要把所有无关修改混进一个难以审查的 commit。
+
+如果当前 Git 环境不适合自动 commit，可以仅修改文件并保留 working tree。
+
+不要 push。
+
+---
+
+# 29. Backend Validation
+
+根据项目实际情况执行：
 
 ```bash
 cd backend
@@ -334,196 +945,226 @@ mvn test
 ./mvnw test
 ```
 
-至少确认：
+必要时：
 
-* Maven/Gradle 能正确识别项目；
-* Java 源代码路径正常；
-* 编译配置没有因为目录移动而失效。
+```bash
+mvn clean test
+```
 
-## Frontend
+如果测试覆盖不足，至少执行：
+
+```bash
+mvn compile
+```
+
+确保：
+
+```text
+Compilation       PASS
+Tests             PASS / Known Failure
+Imports           PASS
+Package Structure PASS
+```
+
+---
+
+# 30. Frontend Validation
 
 执行：
 
 ```bash
 cd frontend
-npm install
 npm run build
 ```
 
-如果依赖已经存在，也可以根据实际情况选择更合适的安装方式，例如：
+如果存在：
 
 ```bash
-npm ci
+npm run lint
+npm run test
 ```
 
-至少确认：
+也执行相应检查。
 
-* package 配置正常；
-* Vite 可以找到项目入口；
-* 前端能够完成构建。
-
-如果测试或构建本身存在旧项目遗留错误，不要为了让测试强行通过而大规模修改源代码。
-
-应记录错误并报告。
-
----
-
-# 11. Git Verification
-
-完成后执行：
-
-```bash
-git status
-```
-
-检查仓库。
-
-确保不存在：
+确保至少：
 
 ```text
-frontend/.git
-backend/.git
+Type Check PASS
+Build      PASS
+Lint       PASS / Known Failure
+Tests      PASS / Known Failure
 ```
 
-等嵌套 Git Repository。
+---
 
-同时确认：
+# 31. Search After Refactoring
 
-```bash
-git remote -v
-```
+完成重命名后，对整个仓库再次搜索：
 
-不存在旧 remote。
+* 旧 class name；
+* 旧 component name；
+* 旧 filename；
+* 旧 import；
+* TODO；
+* FIXME；
+* console.log；
+* System.out.println；
+* printStackTrace；
+* suspicious empty catch。
 
-最终仓库应满足：
+确认没有因为重构产生悬空引用。
+
+---
+
+# 32. Full Regression Validation
+
+最终至少完成：
 
 ```text
-SmartSE/
-└── .git/
+Backend compile
+Backend tests
+
+Frontend build
+Frontend lint/type check（如果项目支持）
+
+Git status
 ```
 
-仅根目录存在一个 Git Repository。
+如果项目存在现成的 integration test / E2E test，也应执行。
 
 ---
 
-# 12. Initial Commit
+# 33. Existing Failures
 
-确认：
+如果在修改前或修改过程中发现项目原本就存在失败：
 
-* 目录整理完成；
-* 构建产物已排除；
-* 敏感信息已处理；
-* 前后端目录正确；
-* 不存在旧 Git 元数据；
+不要为了获得：
 
-之后可以创建新的初始提交：
-
-```bash
-git add .
-git commit -m "chore: initialize SmartSE monorepo"
+```text
+PASS
 ```
 
-如果当前 Git 环境缺少 `user.name` 或 `user.email`，导致 commit 无法执行：
+而进行与本次任务无关的大规模修改。
 
-**不要擅自修改用户全局 Git 配置。**
+应该区分：
 
-保留 staged changes，并在最终报告中说明即可。
+```text
+Pre-existing failure
+Regression introduced by refactoring
+Bug discovered during refactoring
+```
 
----
-
-# 13. Important Constraints
-
-本次任务属于：
-
-> Repository Restructuring / Monorepo Migration
-
-而不是：
-
-> Application Architecture Refactoring
-
-因此除非为了修复目录迁移导致的问题，否则：
-
-**不要：**
-
-* 重写 Spring Boot Service；
-* 修改 Controller 业务逻辑；
-* 修改数据库模型；
-* 重构 Vue 页面；
-* 改写 API；
-* 更换框架；
-* 升级大量依赖；
-* 修改数据库结构；
-* 删除无法确认用途的源代码；
-* 为“代码更漂亮”而进行无关重构。
-
-对于用途无法确认的文件：
-
-> 保留优先于删除。
+**本次修改不得引入新的 regression。**
 
 ---
 
-# 14. Final Report
+# 34. Final Report
 
-任务完成后输出简洁的重构报告，包括：
+完成后生成：
 
-## Repository Structure
+```text
+docs/refactoring-report.md
+```
 
-给出整理后的主要目录树。
+报告保持简洁，但至少包含以下内容。
 
-## Changes
+## Naming Standardization
 
-说明：
+记录最终采用的：
 
-* 哪些目录被移动；
-* 哪些生成文件被清理；
-* `.gitignore` 做了哪些调整；
-* 是否修改了路径相关配置；
-* 是否发现敏感配置。
+* Backend naming convention；
+* Frontend naming convention；
+* 文件命名规则；
+* package 规则；
+* component 规则。
 
-## Git
+## Major Renames
 
-说明：
+记录重要：
 
-* 旧 Git 信息是否已完全清除；
-* 新 Git Repository 是否初始化；
-* 当前 branch；
-* 是否创建 initial commit；
-* 是否存在 remote。
+```text
+Old Name -> New Name
+```
+
+无需记录每一个局部变量。
+
+## Bugs Fixed
+
+每个 Bug 使用：
+
+```text
+Problem:
+Cause:
+Fix:
+Impact:
+```
+
+## Robustness Improvements
+
+记录：
+
+* null safety；
+* exception handling；
+* async handling；
+* validation；
+* logging；
+* security；
+* type safety。
+
+## Issues Not Modified
+
+对于风险较高或需要架构级修改的问题，记录：
+
+```text
+Issue
+Location
+Risk
+Recommended future action
+```
 
 ## Validation
 
-分别给出：
+最终给出：
 
 ```text
-Frontend: PASS / FAIL
-Backend:  PASS / FAIL
-Git:      PASS / FAIL
+Backend Compile: PASS / FAIL
+Backend Tests:   PASS / FAIL
+Frontend Build:  PASS / FAIL
+Frontend Tests:  PASS / FAIL / N/A
+Lint:            PASS / FAIL / N/A
 ```
-
-如果失败，给出具体错误和建议处理方式。
 
 ---
 
-# 15. Final Goal
+# 35. Final Goal
 
-最终项目应该形成一个干净、可维护的 Monorepo：
+本阶段结束后的 SmartSE 应满足：
 
 ```text
-SmartSE
-│
-├── frontend     # Vue / Vite
-├── backend      # Spring Boot
-├── docs
-│
-├── .gitignore
-├── README.md
-└── CLAUDE.md
+Consistent Naming
+        +
+Consistent Code Style
+        +
+Improved Robustness
+        +
+Known Bugs Fixed
+        +
+No Unnecessary Architecture Changes
+        +
+No Regression
 ```
 
-整个 SmartSE 由 **一个 Git Repository** 管理。
+最终代码应该让新的开发者进入项目后，可以较容易理解：
 
-完成本次仓库整理后停止。
+```text
+一个文件应该叫什么
+一个类应该放在哪里
+一个组件应该如何命名
+一个 Service 应该如何组织
+错误应该如何处理
+API 应该遵循什么基本规范
+```
 
-不要继续进行业务功能重构。
+本阶段完成后停止。
 
-后续 Java/Spring Boot 架构重构、功能增强以及前端改造将在下一阶段单独进行。
+不要继续进行新的业务功能开发或大规模架构升级。

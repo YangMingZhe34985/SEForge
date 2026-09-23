@@ -1,0 +1,128 @@
+package com.ustb.seforge.course.api;
+
+import com.ustb.seforge.common.api.ApiEnvelope;
+import com.ustb.seforge.common.audit.AuditService;
+import com.ustb.seforge.course.service.CourseService;
+import com.ustb.seforge.identity.security.UserPrincipal;
+import jakarta.validation.Valid;
+import java.util.List;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/v1/courses/{courseId}")
+public class CourseStructureController {
+    private final CourseService courseService;
+    private final AuditService auditService;
+
+    public CourseStructureController(CourseService courseService, AuditService auditService) {
+        this.courseService = courseService;
+        this.auditService = auditService;
+    }
+
+    @GetMapping("/classes")
+    public ApiEnvelope<List<CourseClassView>> classes(
+            @PathVariable Long courseId, @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiEnvelope.success(courseService.listClasses(courseId, principal.userId()));
+    }
+
+    @PostMapping("/classes")
+    public ResponseEntity<ApiEnvelope<CourseClassView>> createClass(
+            @PathVariable Long courseId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody CreateCourseClassRequest request) {
+        CourseClassView value = courseService.createClass(courseId, principal.userId(), request);
+        auditService.record(principal.userId(), courseId, "COURSE_CLASS_CREATE", "COURSE_CLASS", value.id(),
+                AuditService.SUCCEEDED);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiEnvelope.success(value));
+    }
+
+    @GetMapping("/invites")
+    public ApiEnvelope<List<CourseInviteView>> invites(
+            @PathVariable Long courseId, @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiEnvelope.success(courseService.listInvites(courseId, principal.userId()));
+    }
+
+    @PostMapping("/invites")
+    public ResponseEntity<ApiEnvelope<CourseInviteView>> createInvite(
+            @PathVariable Long courseId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody CreateInviteRequest request) {
+        CourseInviteView value = courseService.createInvite(courseId, principal.userId(), request);
+        auditService.record(principal.userId(), courseId, "COURSE_INVITE_CREATE", "COURSE_INVITE", value.id(),
+                AuditService.SUCCEEDED);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiEnvelope.success(value));
+    }
+
+    @GetMapping("/members")
+    public ApiEnvelope<List<CourseMemberView>> members(
+            @PathVariable Long courseId, @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiEnvelope.success(courseService.listMembers(courseId, principal.userId()));
+    }
+
+    @GetMapping("/chapters")
+    public ApiEnvelope<List<CourseChapterView>> chapters(
+            @PathVariable Long courseId, @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiEnvelope.success(courseService.listChapters(courseId, principal.userId()));
+    }
+
+    @PostMapping("/chapters")
+    public ResponseEntity<ApiEnvelope<CourseChapterView>> createChapter(
+            @PathVariable Long courseId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody CreateChapterRequest request) {
+        CourseChapterView value = courseService.createChapter(courseId, principal.userId(), request);
+        auditService.record(principal.userId(), courseId, "COURSE_CHAPTER_CREATE", "COURSE_CHAPTER", value.id(),
+                AuditService.SUCCEEDED);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiEnvelope.success(value));
+    }
+
+    @GetMapping("/knowledge-points")
+    public ApiEnvelope<List<KnowledgePointView>> knowledgePoints(
+            @PathVariable Long courseId, @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiEnvelope.success(courseService.listKnowledgePoints(courseId, principal.userId()));
+    }
+
+    @PostMapping("/knowledge-points")
+    public ResponseEntity<ApiEnvelope<KnowledgePointView>> createKnowledgePoint(
+            @PathVariable Long courseId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody CreateKnowledgePointRequest request) {
+        KnowledgePointView value = courseService.createKnowledgePoint(courseId, principal.userId(), request);
+        auditService.record(principal.userId(), courseId, "KNOWLEDGE_POINT_CREATE", "KNOWLEDGE_POINT", value.id(),
+                AuditService.SUCCEEDED);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiEnvelope.success(value));
+    }
+
+    @GetMapping("/resources")
+    public ApiEnvelope<List<CourseResourceView>> resources(
+            @PathVariable Long courseId, @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiEnvelope.success(courseService.listResources(courseId, principal.userId()));
+    }
+
+    @PostMapping("/resources")
+    public ResponseEntity<ApiEnvelope<CourseResourceView>> createResource(
+            @PathVariable Long courseId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody CreateCourseResourceRequest request) {
+        CourseResourceView value = courseService.createResource(courseId, principal.userId(), request);
+        auditService.record(principal.userId(), courseId, "COURSE_RESOURCE_CREATE", "COURSE_RESOURCE", value.id(),
+                AuditService.SUCCEEDED);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiEnvelope.success(value));
+    }
+
+    @GetMapping("/resources/{resourceId}")
+    public ApiEnvelope<CourseResourceView> resource(
+            @PathVariable Long courseId,
+            @PathVariable Long resourceId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiEnvelope.success(courseService.getResource(courseId, resourceId, principal.userId()));
+    }
+}

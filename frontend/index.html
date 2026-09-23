@@ -1,50 +1,14 @@
-<!DOCTYPE html>
-<html lang="">
+<!doctype html>
+<html lang="zh-CN">
   <head>
-    <meta charset="UTF-8">
-    <link rel="icon" href="/public/favicon.ico">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartSE软件工程智能助手</title>
-      <script>
-          window.MathJax = {
-              tex: {
-                  inlineMath: [              // 行内公式配置
-                      ['$', '$'],              // 传统格式
-                      ['\\(', '\\)']           // LaTeX标准格式
-                  ],
-                  displayMath: [             // 显示公式配置
-                      ['$$', '$$'],            // 传统格式
-                      ['\\[', '\\]']           // LaTeX标准格式
-                  ],
-                  processEscapes: true,      // 允许\$转义
-                  packages: {'[+]': ['ams']} // AMS扩展
-              },
-              options: {
-                  skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
-                  ignoreHtmlClass: 'no-math|math-raw' // 忽略这些类
-              },
-              loader: {
-                  load: ['[tex]/ams']
-              },
-              startup: {
-                  ready: () => {
-                      MathJax.startup.defaultReady();
-                      console.log('MathJax is ready');
-                      // 添加自定义渲染钩子
-                      MathJax.startup.promise.then(() => {
-                          document.dispatchEvent(new CustomEvent('MathJaxReady'));
-                      });
-                  }
-              }
-          };
-      </script>
-      <script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js" defer></script>
-      <script src="https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.min.js"></script>
-      <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="SEForge AI 软件工程学习与实践平台" />
+    <title>SEForge</title>
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
 

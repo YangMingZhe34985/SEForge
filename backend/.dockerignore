@@ -1,0 +1,15 @@
+target/
+.git/
+.idea/
+.vscode/
+docker/volumes/
+models/
+nlp-models/
+hanlp/
+temp/
+img/
+*.log
+README.md
+.env
+.env.*
+!.env.example

@@ -1,0 +1,29 @@
+spring:
+  config:
+    import: optional:file:../.env[.properties]
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:${MYSQL_HOST_PORT:3307}/${MYSQL_DATABASE:seforge}?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${SPRING_DATASOURCE_USERNAME:${MYSQL_APP_USERNAME:seforge}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${MYSQL_APP_PASSWORD}}
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:${REDIS_HOST_PORT:6380}}
+      password: ${SPRING_DATA_REDIS_PASSWORD:${REDIS_PASSWORD}}
+
+seforge:
+  security:
+    allowed-origins: http://localhost:5173
+    secure-cookie: false
+
+management:
+  endpoint:
+    health:
+      show-details: always
+  health:
+    redis:
+      enabled: false
+
+logging:
+  level:
+    com.ustb.seforge: INFO

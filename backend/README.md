@@ -1,332 +1,107 @@
-# 智能软件工程辅导教学助手
+# SEForge Backend
 
-## 项目简介
-本项目是一个基于 **Spring Boot** 开发的后端系统，旨在为软件工程课程提供 AI 辅导支持。项目包括多个模块，涉及智能体（agent）、用户管理（user）和对话处理（chat）。系统通过智能体与用户的交互，帮助学生解决学习过程中遇到的问题。
+Spring Boot API 与异步 worker 共用本模块和容器镜像，通过 Spring Profile 区分进程职责。
 
-## 技术栈
-- **Spring Boot**：后端框架，负责应用的整体架构和控制器层。
-- **Spring Data JPA / MyBatisPlus**：用于数据库访问层。
-- **MySQL**：作为数据库管理系统。
-- **Redis**：用于缓存处理(目前尚未实现)。
-- **其他依赖**：如日志系统、消息队列等。
+## 构建与测试
 
-## 项目结构
-```plaintext
-├── src
-│   ├── main
-│   │   ├── java
-│   │   │   ├── com.ustb.smartse
-│   │   │   │   ├── api
-│   │   │   │   │   ├── llm
-│   │   │   │   │   │   └── dto
-│   │   │   │   │   └── vision
-│   │   │   │   ├── common
-│   │   │   │   │   ├── constant
-│   │   │   │   │   ├── exception
-│   │   │   │   │   └── utils
-│   │   │   │   ├── config
-│   │   │   │   ├── modules
-│   │   │   │   │   ├── agent
-│   │   │   │   │   │   ├──controller
-│   │   │   │   │   │   ├──dto
-│   │   │   │   │   │   ├──entity
-│   │   │   │   │   │   ├──mapper
-│   │   │   │   │   │   └──service
-│   │   │   │   │   │      └──impl
-│   │   │   │   │   ├── chat
-│   │   │   │   │   │   ├──controller
-│   │   │   │   │   │   ├──dto
-│   │   │   │   │   │   ├──entity
-│   │   │   │   │   │   ├──mapper
-│   │   │   │   │   │   └──service
-│   │   │   │   │   │      └──impl
-│   │   │   │   │   ├── user
-│   │   │   │   │   │   ├──controller
-│   │   │   │   │   │   ├──dto
-│   │   │   │   │   │   ├──entity
-│   │   │   │   │   │   ├──mapper
-│   │   │   │   │   │   └──service
-│   │   │   │   │   │      └──impl
-│   │   └──resources
-```
-## 项目架构介绍
-
-该项目采用 **Spring Boot** 作为框架，整体架构遵循分层设计，旨在实现模块化、解耦和可扩展性。系统的核心模块包括智能体、用户管理、对话处理等，分别实现不同的功能需求。
-
-### 1. **模块划分**
-项目中的功能被划分为多个模块，每个模块承担不同的职责，方便开发和维护。
-
-- **api**：该模块包含与外部交互的接口，负责定义所有与前端、外部服务或其他微服务交互的 API。`llm` 模块处理与大语言模型（如 OpenAI）相关的请求，`vision` 模块处理与图片识别的 API（暂未实现）。
-
-- **common**：包含项目中的常量、异常处理、工具类等公共功能。`constant` 包含项目中需要使用的常量定义，`exception` 处理全局的异常管理，`utils` 包含常用的工具类。
-
-- **config**：存放项目的配置文件，例如数据库、缓存配置、第三方服务接入配置等。
-
-- **modules**：这是项目的核心业务逻辑所在部分，包含了与用户、聊天、智能体相关的所有功能：
-    - **agent**：该模块负责处理智能体的核心业务，包括与 AI 模型的交互。
-    - **chat**：负责处理用户和系统之间的对话、聊天历史记录的管理、聊天消息的发送和接收等。包含多个子模块：`controller`、`dto`、`entity`、`mapper`、`service`，每个子模块都处理不同的责任。
-    - **user**：负责用户的注册、登录、会话管理等功能，确保用户身份验证和权限控制。
-
-- **SmartSeApplication.java**：项目的入口类，包含 `main` 方法，启动整个 Spring Boot 应用。
-
-### 2. **模块结构与职责**
-项目的每个模块具有清晰的职责划分：
-- **controller**：负责接收和处理来自前端的 HTTP 请求，协调各个层次的操作，是与前端进行交互的层级。
-- **dto**：数据传输对象（DTO），用于与外部系统或前端进行数据交换，避免直接暴露实体对象，并将需要的数据传递给客户端。
-- **entity**：包含实体类，通常与数据库表一一对应，负责数据持久化。
-- **mapper**：处理数据库的 CRUD 操作，通过 MyBatis 或 JPA 等框架与数据库进行交互。
-- **service**：服务层，包含具体的业务逻辑和核心操作，提供控制器和数据持久层之间的交互。
-- **impl**：服务层的实现类，负责实际的业务逻辑处理。
-
-### 3. **核心组件**
-- **Spring Boot**：作为项目的框架，提供了快速开发、内嵌服务器支持、自动配置等功能，简化了项目开发。
-- **Spring Data JPA / MyBatis**：用于数据库操作，MyBatis 提供了灵活的 SQL 映射功能，Spring Data JPA 则简化了数据库的持久化操作。
-- **MySQL**：作为数据库，存储系统中的所有数据（如用户信息、聊天记录等）。
-- **Redis**：暂时未实现，但可用于缓存处理，提高系统性能，尤其是在处理高并发请求时。
-
-### 4. **依赖关系**
-- **Spring Boot** 框架通过依赖注入（DI）管理所有的组件和服务，确保各个模块之间松耦合。
-- **控制层（Controller）** 与 **服务层（Service）** 之间通过接口进行交互，确保了模块的高内聚和低耦合。
-- **服务层** 调用 **数据访问层（Mapper）**，通过 JPA 或 MyBatis 进行数据库操作。
-- **DTO** 用于 **Controller** 和 **Service** 之间的数据交换，避免直接暴露数据库实体数据。
-
-## 向量数据库配置说明
-
-本项目支持两种向量存储方式：
-1. 内存向量存储（默认）
-2. Milvus向量数据库（需要Docker环境）
-
-### 内存向量存储（默认）
-
-默认情况下，项目使用内存向量存储，无需额外配置。这种方式适合开发和测试环境，但数据会在应用重启后丢失。
-
-### Milvus向量数据库
-
-如果需要使用Milvus向量数据库，请按照以下步骤操作：
-
-1. 确保已安装Docker和Docker Compose
-2. 在项目根目录下运行以下命令启动Milvus服务：
-   ```bash
-   docker-compose up -d
-   ```
-3. 修改`application.properties`文件中的Milvus配置：
-   ```properties
-   # 启用Milvus
-   langchain4j.milvus.enabled=true
-   langchain4j.milvus.host=localhost
-   langchain4j.milvus.port=19530
-   langchain4j.milvus.collection-prefix=smartse_
-   langchain4j.milvus.embedding-dimension=1536
-   ```
-
-### 注意事项
-
-由于protobuf版本冲突问题，直接在应用中使用Milvus客户端可能会导致错误。我们提供了以下解决方案：
-
-1. 使用条件Bean配置，允许在不同环境中灵活切换存储方式
-2. 如果确实需要使用Milvus，建议创建单独的微服务或模块专门处理向量存储
-
-## 技术架构
-
-本项目使用以下技术：
-- Spring Boot 3.x
-- LangChain4j
-- Neo4j
-- Elasticsearch
-- Milvus/内存向量存储
-
-## 构建和运行
+需要 JDK 21。仓库自带 Maven Wrapper：
 
 ```bash
-# 构建项目
-mvn clean install -DskipTests
-
-# 运行项目
-mvn spring-boot:run
+./mvnw clean verify                 # Windows: mvnw.cmd clean verify
+./mvnw spring-boot:run
 ```
 
-## 当前接口文档(后续需要大家维护)
+运行时约定：
 
-| 接口名                  | 接口方法 | 接口路径                                         |
-|------------------------|----------|------------------------------------------------|
-| listAgents              | GET      | [http://localhost:8080/api/agent/list](http://localhost:8080/api/agent/list) |
-| login                   | POST     | [http://localhost:8080/api/user/login](http://localhost:8080/api/user/login) |
-| getProfile              | GET      | [http://localhost:8080/api/user/profile/{userId}](http://localhost:8080/api/user/profile/{userId}) |
-| getUserChatSessions     | POST     | [http://localhost:8080/api/chat/sessions](http://localhost:8080/api/chat/sessions) |
-| getUserHistoryChatSessions | POST   | [http://localhost:8080/api/chat/history](http://localhost:8080/api/chat/history) |
-| askQuestion             | POST     | [http://localhost:8080/api/chat/ask](http://localhost:8080/api/chat/ask) |
+- `dev`：本地开发，允许 AI/外部基础设施不可用。
+- `test`：自动化测试，使用测试替身或 Testcontainers，不访问云模型。
+- `prod`：API 的容器配置，Flyway 是唯一 Schema 管理入口。
+- `worker`：与 `prod` 组合为 `prod,worker`，处理持久异步任务。
 
-## 注意事项
+API 监听 8080，健康检查为 `GET /actuator/health`。容器入口不探测云模型；Provider 未配置时应报告降级状态，而不是阻止核心服务启动。
 
-在开始使用本项目之前，请确保你了解以下一些基础的内容，以便顺利运行和开发：
+## 容器运行
 
-### 1. **Spring Boot 基础**
-**Spring Boot** 是一个开箱即用的框架，可以简化 Spring 应用的配置和开发。你无需编写复杂的 XML 配置文件，只需通过 **`application.properties`** 或 **`application.yml`** 文件配置相关参数，Spring Boot 会自动进行配置。
+发布 Compose 位于 `docker/docker-compose.yml`。从仓库根目录运行：
 
-启动 Spring Boot 项目非常简单，只需运行 **`SmartSeApplication.java`** 文件中的 **`main`** 方法即可启动应用。你也可以通过命令行工具使用以下命令启动项目：
 ```bash
-mvn spring-boot:run
+cp .env.example .env
+docker compose --env-file .env -f backend/docker/docker-compose.yml config --quiet
+docker compose --env-file .env -f backend/docker/docker-compose.yml up -d --build
 ```
 
-### 2. **依赖管理**
-   本项目使用 Maven 进行依赖管理，请确保你已经安装了 Maven，并且能够正常运行
+默认启动 frontend、api、worker、MySQL、Redis、MinIO、etcd 和 Milvus。SonarQube 与专用 PostgreSQL 仅在 `--profile review` 下启动。
+
+关键配置全部由环境变量注入：
+
+| 范围 | 变量 |
+| --- | --- |
+| MySQL | `MYSQL_DATABASE`、`MYSQL_APP_USERNAME`、`MYSQL_APP_PASSWORD`、`MYSQL_ROOT_PASSWORD` |
+| Redis | `REDIS_PASSWORD` |
+| MinIO | `MINIO_ROOT_*`、`MINIO_APP_*` |
+| Milvus | `MILVUS_ENABLED` |
+| AI | `SEFORGE_AI_ENABLED`、`DEEPSEEK_API_KEY`、`DASHSCOPE_API_KEY` |
+| SonarQube 服务 | `SONAR_POSTGRES_*`、`SONAR_HTTP_PORT` |
+| 代码扫描 Worker | `SEFORGE_SONAR_ENABLED`、`SEFORGE_SONAR_SERVER_URL`、`SEFORGE_SONAR_TOKEN`、`SEFORGE_SONAR_SCANNER_EXECUTABLE` |
+
+Compose 将这些值映射为标准 `SPRING_*` 和 `SEFORGE_*` 配置。数据库、中间件和模型凭据不写入镜像或 Compose 文件。
+
+API 侧 DeepSeek/DashScope 的 Base URL 与模型名可通过 `.env.example` 中的变量覆盖。worker
+默认经固定 allow-list 代理出站；发布门禁若使用 Stub Provider，可用
+`SEFORGE_WORKER_DEEPSEEK_BASE_URL` / `SEFORGE_WORKER_DASHSCOPE_BASE_URL` 指向已加入 internal
+data 网络的 Stub 服务。不要让负载测试调用计费的生产模型。
+
+全新数据库可通过 `SEFORGE_BOOTSTRAP_ADMIN_EMAIL` 与 `SEFORGE_BOOTSTRAP_ADMIN_PASSWORD` 一次性创建管理员；密码留空即禁用。创建成功后清空这两个值并重建 API 容器，后续账号由管理员界面维护。
+
+## 运维
+
 ```bash
-mvn install
-```
-  或 
-```bash
-mvn spring-boot:run
-```
-   等命令。
+# 状态和资源
+docker compose --env-file .env -f backend/docker/docker-compose.yml ps
+docker stats
 
-如果你修改了 pom.xml 文件，添加了新的依赖，请记得执行 mvn clean install 来更新依赖。
+# 聚合日志
+docker compose --env-file .env -f backend/docker/docker-compose.yml logs -f --tail=200 api worker
 
-### 3. **数据库配置**
-   项目使用 MySQL 作为数据库。你需要配置数据库连接信息（如用户名、密码、数据库 URL 等），这些配置位于 application.yml 文件中。确保你已经启动了 MySQL 服务，并且创建了相应的数据库（如 smartse）。
+# 重启单个无状态进程
+docker compose --env-file .env -f backend/docker/docker-compose.yml restart api
 
-你也可以根据需要修改数据库配置，使用 Spring Data JPA 或 MyBatis 进行数据库操作。
-
-### 4. **Redis 缓存**
-   项目目前尚未实现 Redis 缓存功能，但未来可以通过配置 Redis 来提高系统性能，尤其是在处理大量请求时。需要提前安装并配置 Redis 服务。
-
-### 5. **API 调试与测试**
-项目提供了多个 **API 接口**，你可以通过 **Postman** 或其他 API 调试工具进行测试。测试时需要注意以下几点：
-
-1. **接口路径和请求方法**：
-    - 在调用接口之前，请参考接口文档，确保你使用正确的接口路径和请求方法（如 **GET**、**POST** 等）。
-    - 例如：`GET /api/user/profile/{userId}` 需要通过 **GET** 请求来调用。
-
-2. **接口输入参数**：
-    - 调用接口时，需要正确填写请求参数。每个接口的输入参数、格式、类型以及是否必需，都会在接口文档中列出。确保你正确提供了这些参数。
-    - **注意**：有些接口的参数需要通过请求体（**body**）传递，另一些则通过查询字符串（**query parameters**）传递。
-
-3. **接口输出和响应**：
-    - 接口返回的响应格式会在接口文档中详细说明。响应通常会包含：
-        - **status**：表示请求是否成功（如 "success" 或 "error"）。
-        - **data**：返回的具体数据或错误信息。
-    - 示例：
-      ```json
-      {
-        "status": "success",
-        "data": {
-          "message": "Welcome, user!",
-          "userId": 123
-        }
-      }
-      ```
-
-4. **接口注释**：
-    - 在开发过程中，务必为每个接口添加输入输出的详细注释。注释应包括：
-        - **请求参数**：列出接口所需的所有参数及其说明（如类型、是否必需等）。
-        - **响应数据**：解释返回的字段，帮助调试和理解接口返回的数据结构。
-    - 示例：
-      ```java
-      @PostMapping("/api/chat/ask")
-      public ResponseEntity<ChatResponse> askQuestion(@RequestBody ChatRequest request) {
-          // request.body: { question: "What is Spring Boot?" }
-          // 返回：
-          // {
-          //   "status": "success",
-          //   "data": {
-          //     "answer": "Spring Boot is a framework for building Java-based applications."
-          //   }
-          // }
-      }
-      ```
-
-### 5. **API 调试与测试**
-项目提供了多个 **API 接口**，你可以通过 **Postman** 或其他 API 调试工具进行测试。测试时需要注意以下几点：
-
-#### 5.1 **接口路径和请求方法**
-- 在调用接口之前，请参考接口文档，确保你使用正确的接口路径和请求方法（如 **GET**、**POST** 等）。
-- 例如：`GET /api/user/profile/{userId}` 需要通过 **GET** 请求来调用。
-
-#### 2. **接口输入参数**
-- 调用接口时，需要正确填写请求参数。每个接口的输入参数、格式、类型以及是否必需，都会在接口文档中列出。确保你正确提供了这些参数。
-- **注意**：有些接口的参数需要通过请求体（**body**）传递，另一些则通过查询字符串（**query parameters**）传递。
-
-#### 3. **接口输出和响应**
-- 接口返回的响应格式会在接口文档中详细说明。响应通常会包含：
-        - **status**：表示请求是否成功（如 "success" 或 "error"）。
-        - **data**：返回的具体数据或错误信息。
-- 示例：
-```json
-      {
-        "status": "success",
-        "data": {
-          "message": "Welcome, user!",
-          "userId": 123
-        }
-      }
+# 在容器网络内检查 API
+docker compose --env-file .env -f backend/docker/docker-compose.yml exec api \
+  wget -qO- http://127.0.0.1:8080/actuator/health
 ```
 
-#### 4. **接口注释**
-- 在开发过程中，务必为每个接口添加输入输出的详细注释。注释应包括：
-        - **请求参数**：列出接口所需的所有参数及其说明（如类型、是否必需等）。
-        - **响应数据**：解释返回的字段，帮助调试和理解接口返回的数据结构。
-- 示例：
-    ```java
-      @PostMapping("/api/chat/ask")
-      public ResponseEntity<ChatResponse> askQuestion(@RequestBody ChatRequest request) {
-          // request.body: { question: "What is Spring Boot?" }
-          // 返回：
-          // {
-          //   "status": "success",
-          //   "data": {
-          //     "answer": "Spring Boot is a framework for building Java-based applications."
-          //   }
-          // }
-      }
-    ```
+持久数据位于 Compose named volumes。升级前应分别备份 MySQL、MinIO 和 Milvus/etcd；仅备份某一个 volume 不能构成一致的向量数据快照。`docker compose down` 保留数据，`down --volumes` 会不可恢复地删除本栈数据。
 
-#### 5. **使用 Postman 进行测试**
-在 **Postman** 中，你可以创建一个新的请求，选择适当的 HTTP 方法（如 GET、POST 等），并根据接口文档填充请求头和请求体。以下是使用 Postman 进行接口测试的一些步骤：
+生产建议由宿主机 TLS 反向代理转发到 `SEFORGE_HTTP_PORT`，将 `SEFORGE_BIND_ADDRESS` 限制为代理可访问的地址，并把 `SESSION_COOKIE_SECURE` 设为 `true`。轮换已持久化的 MySQL、MinIO 或 SonarQube 凭据时，应先按对应服务流程更新账号，再同步 `.env`；仅修改文件不会重置已有账号。SonarQube 启动前还需按其官方要求配置宿主机 `vm.max_map_count`。
 
-1. **创建新请求**：
-    - 打开 Postman，点击 **New** 按钮，选择 **Request** 来创建一个新的请求。
-    - 选择适当的 HTTP 方法（如 GET、POST），并在 **URL** 输入框中填写接口路径（如 `http://localhost:8080/api/user/login`）。
+## SonarQube 代码评审
 
-2. **配置请求头和请求体**：
-    - 根据接口文档，填写请求头（如 `Content-Type: application/json`）和请求体。如果是 POST 请求，通常需要在 **Body** 中提供数据。
-    - 确保所有必要的请求参数都已正确填写。对于某些接口，你可能需要添加认证信息或其他自定义的头部信息。
+`POST /api/v1/courses/{courseId}/reviews/code` 只接受服务端已经绑定到该 submission 的
+ZIP `attachmentObjectKey`，不接受客户端提供的 Sonar findings。异步 worker 会重新读取并校验
+对象、解压到一次性目录、调用 SonarScanner、等待 Compute Engine 终态，然后从 SonarQube API
+读取 issues、度量和 Quality Gate。Scanner 非零退出、超时、CE `FAILED/CANCELED`、API 异常或
+畸形响应都会使任务失败并进入统一重试/死信流程，不会生成成功报告。
 
-3. **身份验证**：
-    - 如果接口需要身份验证或传递认证信息，请在 **Authorization** 或 **Headers** 中正确设置认证方式（如 Bearer Token 或 Basic Auth）。根据接口的要求填写相应的字段。
+Compose 的 worker target 基于固定版本的官方 SonarScanner CLI 镜像构建；API target 保持精简。
+应用不会在启动或任务执行时下载 Scanner。`SEFORGE_SONAR_SCANNER_EXECUTABLE` 可覆盖默认
+`sonar-scanner`，Token 仅通过子进程环境和 Bearer API 认证传递，不写入命令行。若启用扫描但
+Scanner 或 Token 不可用，Review 会明确失败为 `SONAR_FAILED`，不会生成假成功报告。
 
-4. **发送请求并查看响应**：
-    - 配置好请求后，点击 **Send** 按钮发送请求。
-    - Postman 会显示接口的响应内容，包括响应状态码、响应体等。根据返回的数据，可以判断请求是否成功，并进一步进行调试。
+```text
+SEFORGE_SONAR_ENABLED=true
+SEFORGE_SONAR_SERVER_URL=http://sonarqube:9000
+SEFORGE_SONAR_TOKEN=<project-analysis-token>
+SEFORGE_SONAR_SCANNER_EXECUTABLE=sonar-scanner
+```
 
-5. **响应解析**：
-    - 在 Postman 中，你可以直接查看接口的响应体，查看返回的数据和状态码。
-    - 示例：如果请求成功，你会看到类似下面的响应：
-      ```json
-      {
-        "status": "success",
-        "data": {
-          "message": "Welcome, user!",
-          "userId": 123
-        }
-      }
-      ```
-    - 如果请求失败，Postman 会提供详细的错误信息，帮助你定位问题。
+扫描进程不会调用 shell、Maven、Gradle、npm 或学生代码，并忽略学生提供的
+`sonar-project.properties`。ZIP 限制为 50 MB 压缩体积、200 MB 展开体积、2,000 个条目，
+同时检查 MIME、签名、单文件大小、路径穿越、保留路径、嵌套压缩包和压缩比。Compose 中
+worker 只连接 `internal` data 网络，不能直接访问公网；模型调用只能经过 `ai-egress` 的固定
+DeepSeek/DashScope 反向代理路径。Scanner 子进程的环境会移除模型 URL 与凭据，因此扫描阶段
+只能访问 data 网络内的 SonarQube，不能借用模型出口。若修改网络拓扑，必须保留这条隔离边界。
 
-以下是一个使用 Postman 进行请求的示例图，展示了如何设置请求和查看响应：
+`load-test` profile 使用固定版本的 k6 镜像执行混合负载门禁，运行前必须准备独立测试账号、课程、知识文档和 Stub AI。参数及运行方法见 [混合负载说明](../docs/load-test/README.md)。
 
-![Postman使用演示图](img/show.png)
-
-通过这张图，你可以更直观地了解如何配置和发送请求，以及如何解析响应内容。
-
-#### 6. **错误和调试**
-- 如果接口返回错误，检查返回的错误信息，定位问题所在。常见的错误可能包括 **400 Bad Request**（请求参数错误）、**401 Unauthorized**（身份验证失败）、**500 Internal Server Error**（服务器问题）等。
-- 通过查看返回的 **status** 和 **message** 字段，可以帮助你快速找到问题所在。
-
-#### 7. **模块间测试**
-- 项目中的每个模块（如 **chat**、**user**、**agent**）都有不同的功能，确保你在调用时选择正确的 API 接口。每个模块的功能独立，但也有一定的交互，所以需要测试各个模块的集成情况。
-
-### 6. **常见问题解决**
-   项目无法启动：请检查是否正确配置了数据库连接，确保数据库服务已经启动。查看 application.yml 配置文件是否正确填写(尤其是数据库密码)。
-
-接口调用失败：确保你使用的接口方法和请求参数与文档中的要求一致。如果接口返回错误，请查看日志输出，定位问题所在。
-
-
+完整的发布前检查、备份、恢复演练和故障响应流程见 [运维手册](../docs/operations.md)。

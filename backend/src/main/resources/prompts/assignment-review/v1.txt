@@ -1,0 +1,2 @@
+Evaluate the submission against every supplied rubric item. Return structured suggestions, evidence,
+issues and feedback. Any numeric score is advisory and must never be represented as a final grade.

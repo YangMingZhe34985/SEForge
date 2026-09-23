@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      - name: Verify backend
+        working-directory: backend
+        run: |
+          chmod +x mvnw
+          ./mvnw --batch-mode --no-transfer-progress clean verify
+
+  frontend:
+    name: Frontend quality gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Type-check
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Run unit tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser tests
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 14
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  containers:
+    name: Validate release images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    needs: [backend, frontend]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Validate Compose model
+        run: >-
+          docker compose
+          --env-file .env.example
+          -f backend/docker/docker-compose.yml
+          --profile review
+          --profile load-test
+          config --quiet
+
+      - name: Verify worker egress isolation
+        run: |
+          model="$(docker compose --env-file .env.example -f backend/docker/docker-compose.yml --profile review config --format json)"
+          jq -e '(.services.worker.networks | keys) == ["data"]' <<<"$model"
+          jq -e '.services.worker.environment.DEEPSEEK_BASE_URL | startswith("http://ai-egress:8080/")' <<<"$model"
+          jq -e '.services.worker.environment.DASHSCOPE_BASE_URL | startswith("http://ai-egress:8080/")' <<<"$model"
+          jq -e '(.services["ai-egress"].networks | has("edge") and has("data"))' <<<"$model"
+
+      - name: Validate AI egress proxy configuration
+        run: >-
+          docker compose
+          --env-file .env.example
+          -f backend/docker/docker-compose.yml
+          run --rm --no-deps ai-egress nginx -t
+
+      - name: Validate k6 load-test script
+        run: >-
+          docker run --rm --network none
+          -v "${PWD}/docs/load-test:/scripts:ro"
+          grafana/k6:1.0.0
+          inspect /scripts/mixed-load.js
+
+      - name: Build application images
+        run: >-
+          docker compose
+          --env-file .env.example
+          -f backend/docker/docker-compose.yml
+          build api worker frontend

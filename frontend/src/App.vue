@@ -1,16 +1,22 @@
-<template>
-  <div id="app">
-    <router-view></router-view>
-  </div>
-</template>
+<script setup lang="ts">
+import { onBeforeUnmount, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
-<script>
-import 'highlight.js/styles/github.css';
-export default {
-  name: 'App'
+const router = useRouter()
+const auth = useAuthStore()
+
+const handleUnauthorized = () => {
+  auth.clearSession()
+  void router.replace({ name: 'login', query: { expired: '1' } })
 }
+
+onMounted(() => window.addEventListener('seforge:unauthorized', handleUnauthorized))
+onBeforeUnmount(() => window.removeEventListener('seforge:unauthorized', handleUnauthorized))
 </script>
 
-<style>
-/* 全局样式已移至global.css */
-</style>
+<template>
+  <el-config-provider size="default">
+    <router-view />
+  </el-config-provider>
+</template>

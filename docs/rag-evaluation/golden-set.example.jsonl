@@ -1,0 +1,3 @@
+{"id":"answerable-001","question":"请根据课程 SRS 解释需求可追踪性。","answerable":true,"expectedSources":["SRS.md"]}
+{"id":"answerable-002","question":"课程资料中建议如何组织系统测试？","answerable":true,"expectedSources":["测试报告.docx"]}
+{"id":"unanswerable-001","question":"本课程未提供的明日股票收盘价是多少？","answerable":false,"expectedSources":[]}

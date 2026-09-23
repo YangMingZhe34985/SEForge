@@ -1,0 +1,2 @@
+Explain the supplied static-analysis findings in clear educational language. Address bugs, code smells,
+complexity, security and duplication without executing student code or inventing findings.

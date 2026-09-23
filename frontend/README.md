@@ -1,30 +1,29 @@
-# smartse_front
+# SEForge Web
 
-This template should help get you started developing with Vue 3 in Vite.
+Vue 3 + TypeScript + Pinia 前端。应用通过同源 `/api/v1` 访问后端，认证使用 HttpOnly Session Cookie 和 CSRF Token，不在浏览器存储用户令牌。
 
-## Recommended IDE Setup
+## 本地开发
 
-[VSCode](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
-
-```sh
-npm install
-```
-
-### Compile and Hot-Reload for Development
-
-```sh
+```bash
+npm ci
 npm run dev
 ```
 
-### Compile and Minify for Production
+需要开发代理时，在本机环境文件中配置：
 
-```sh
+```dotenv
+SEFORGE_API_PROXY=http://127.0.0.1:8080
+```
+
+生产环境默认由反向代理提供同源 `/api/v1`，也可通过 `VITE_API_BASE_URL` 在构建时覆盖。
+
+## 质量门禁
+
+```bash
+npm run lint
+npm run typecheck
+npm test
 npm run build
 ```
-# SmartSE-front-end-2
+
+路由页面使用动态导入。学生、教师与管理员共享一个 App Shell，导航显示和路由守卫都按服务端返回的账号能力控制；服务端仍是最终授权边界。
