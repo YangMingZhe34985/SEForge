@@ -26,7 +26,7 @@ npm ci
 npm run dev
 ```
 
-本地前端默认运行在 `http://localhost:5173`。AI Provider 未配置时，核心课程业务仍应可以启动和测试。
+本地前端默认运行在 `http://localhost:5173`。dev server 默认通过已提交的 `frontend/.env.development` 启用 API 代理，指向本机后端 `http://127.0.0.1:8080`（机器级覆盖写 `.env.development.local`）。AI Provider 未配置时，核心课程业务仍应可以启动和测试。
 
 ## 单机容器部署
 
@@ -51,6 +51,8 @@ npm run dev
    ```
 
 模板默认启用 Secure Session Cookie。若只做不经 TLS 的本机联调，可临时设置 `SESSION_COOKIE_SECURE=false`；正式环境必须恢复为 `true` 并在前置代理终止 TLS。
+
+浏览器跨域调用只放行 `SEFORGE_ALLOWED_ORIGINS`（逗号分隔）中列出的 Origin，其值必须与实际访问的公共地址（协议 + 主机 + `SEFORGE_HTTP_PORT`）一致；经自带 nginx 的同源流量自动豁免，不依赖该列表。
 
 SonarQube 代码评审服务是可选组件。Linux 主机先按 SonarQube 要求设置 `vm.max_map_count`，再启动 `review` profile：
 

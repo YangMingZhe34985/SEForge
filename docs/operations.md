@@ -12,7 +12,9 @@
    ```
 
 3. 依次执行 `backend/mvnw clean verify`、前端 lint/typecheck/test/build 和 Playwright。
-4. 确认 TLS 反向代理已就绪，`SESSION_COOKIE_SECURE=true`，对外只放行 443/所需 SSH 管理端口。
+4. 确认 TLS 反向代理已就绪，`SESSION_COOKIE_SECURE=true`，对外只放行 443/所需 SSH 管理端口；
+   `SEFORGE_ALLOWED_ORIGINS` 必须设置为实际公共 Origin（协议 + 主机 + 端口，逗号分隔可多个），
+   否则跨域浏览器调用会被 CORS 拒绝（同源流量经自带 nginx 自动豁免）。
 5. 启用 SonarQube 时先配置宿主机 `vm.max_map_count`，并创建仅允许分析的 Token。
 6. 核对 `SEFORGE_VECTOR_ACTIVE_VERSION`（查询蓝索引）和 `SEFORGE_VECTOR_WRITE_VERSION`
    （摄取绿索引）；切换前先完成全量重索引及向量对账，再原子更新 active 版本并重启 API/worker。
