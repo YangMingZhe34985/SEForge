@@ -49,11 +49,21 @@ public class AdminBootstrap implements ApplicationRunner {
             return;
         }
         if (password.length() < 10 || password.length() > 72) {
-            throw new IllegalStateException("Bootstrap administrator password must contain 10 to 72 characters");
+            // Degrade to a warning: an invalid bootstrap password must not crash-loop the whole API.
+            log.warn("Ignoring the bootstrap administrator: password must contain 10 to 72 characters. "
+                    + "Fix SEFORGE_BOOTSTRAP_ADMIN_PASSWORD and restart.");
+            return;
         }
-        identityService.createUser(new CreateUserRequest(
-                email, username, password, displayName, AccountType.TEACHER,
-                Set.of(GlobalRole.ADMIN, GlobalRole.USER)));
-        log.info("Created the initial SEForge administrator account");
+        try {
+            identityService.createUser(new CreateUserRequest(
+                    email, username, password, displayName, AccountType.TEACHER,
+                    Set.of(GlobalRole.ADMIN, GlobalRole.USER)));
+            log.info("Created the initial SEForge administrator account");
+        } catch (RuntimeException failure) {
+            // A conflicting username/email (or any store failure) must not crash-loop the API.
+            // Resolve the conflict or clear the bootstrap variables, then restart.
+            log.warn("Could not create the bootstrap administrator: {}. Resolve the conflict or clear "
+                    + "SEFORGE_BOOTSTRAP_ADMIN_EMAIL/SEFORGE_BOOTSTRAP_ADMIN_PASSWORD.", failure.getMessage());
+        }
     }
 }
