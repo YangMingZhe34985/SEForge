@@ -10,6 +10,16 @@ docs/                     设计与业务文档
 .github/workflows/ci.yml  持续集成门禁
 ```
 
+前端按信息架构划分为三个角色工作台，共享同一个 Shell 组件、API Client 与认证体系（不拆分为多个前端工程）：
+
+```text
+/admin    管理控制台：管理概览、用户与学期、审计日志
+/teacher  教学工作台：课程创建、课程内容、教学班/邀请码/成员、评审与 Dashboard
+/student  学习工作台：邀请码加入课程、课程内容、课程助手、作业、成绩
+```
+
+登录后按服务端返回的 `roles / accountType` 自动进入对应工作台；旧版扁平 URL（`/courses`、`/reviews`、`/dashboard`、`/grades` 等）自动重定向到新路由。导航显示与路由守卫仅做前端隔离，服务端仍是最终授权边界。
+
 ## 开发环境
 
 需要 JDK 21、Node.js 22、npm，以及 Docker Engine 24+ 与 Docker Compose v2。
@@ -51,6 +61,8 @@ npm run dev
    ```
 
 模板默认启用 Secure Session Cookie。若只做不经 TLS 的本机联调，可临时设置 `SESSION_COOKIE_SECURE=false`；正式环境必须恢复为 `true` 并在前置代理终止 TLS。
+
+首个管理员没有 UI 创建入口，必须通过引导变量初始化：在 `.env` 中设置 `SEFORGE_BOOTSTRAP_ADMIN_EMAIL` 与 `SEFORGE_BOOTSTRAP_ADMIN_PASSWORD`（10–72 位），API 首次启动时自动创建该管理员（用户名默认 `admin`，全局角色 `ADMIN`+`USER`）。系统中已存在 `ADMIN` 时自动跳过；用户名/邮箱冲突或密码不合规时降级为告警日志，不会阻塞启动。管理员登录 `/admin` 后，在“用户与学期”中创建教师账号，教师再创建课程并发放邀请码。
 
 浏览器跨域调用只放行 `SEFORGE_ALLOWED_ORIGINS`（逗号分隔）中列出的 Origin，其值必须与实际访问的公共地址（协议 + 主机 + `SEFORGE_HTTP_PORT`）一致；经自带 nginx 的同源流量自动豁免，不依赖该列表。
 
