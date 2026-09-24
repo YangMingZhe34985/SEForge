@@ -3,7 +3,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
-import { adminApi } from '@/api/analytics'
+import { adminApi } from '@/api/admin'
 import { courseApi } from '@/api/courses'
 import type { CourseSummary, PlatformRole, Semester, SemesterStatus, User } from '@/types/domain'
 
@@ -13,6 +13,8 @@ const courses = ref<CourseSummary[]>([])
 const loading = ref(false)
 const createVisible = ref(false)
 const semesterVisible = ref(false)
+const courseEditVisible = ref(false)
+const courseForm = reactive({ id: '', name: '', description: '', status: 'ACTIVE' as 'ACTIVE' | 'ARCHIVED' })
 const form = reactive({
   email: '',
   username: '',
@@ -91,6 +93,48 @@ async function toggleAdmin(user: User) {
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error instanceof Error ? error.message : '操作失败') }
 }
 
+function openCourseEdit(course: CourseSummary) {
+  Object.assign(courseForm, {
+    id: course.id,
+    name: course.name,
+    description: course.description || '',
+    status: course.status,
+  })
+  courseEditVisible.value = true
+}
+
+async function saveCourseEdit() {
+  if (!courseForm.name.trim()) return ElMessage.warning('请填写课程名称')
+  try {
+    const updated = await courseApi.update(courseForm.id, {
+      name: courseForm.name.trim(),
+      description: courseForm.description,
+      status: courseForm.status,
+    })
+    const index = courses.value.findIndex((course) => course.id === updated.id)
+    if (index >= 0) courses.value[index] = { ...courses.value[index], ...updated }
+    courseEditVisible.value = false
+    ElMessage.success('课程已更新')
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '课程更新失败') }
+}
+
+async function toggleCourseArchive(course: CourseSummary) {
+  const archiving = course.status !== 'ARCHIVED'
+  try {
+    await ElMessageBox.confirm(
+      archiving
+        ? `归档后“${course.name}”将不再接受新成员加入，确定归档吗？`
+        : `确定恢复“${course.name}”为进行中吗？`,
+      archiving ? '归档课程' : '恢复课程',
+      { type: 'warning' },
+    )
+    const updated = await courseApi.update(course.id, { status: archiving ? 'ARCHIVED' : 'ACTIVE' })
+    const index = courses.value.findIndex((item) => item.id === updated.id)
+    if (index >= 0) courses.value[index] = { ...courses.value[index], ...updated }
+    ElMessage.success(archiving ? '课程已归档' : '课程已恢复')
+  } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error instanceof Error ? error.message : '操作失败') }
+}
+
 onMounted(load)
 </script>
 
@@ -119,6 +163,7 @@ onMounted(load)
         <el-table-column prop="memberCount" label="成员数" width="100" />
         <el-table-column label="状态" width="110"><template #default="scope"><el-tag :type="scope.row.status === 'ACTIVE' ? 'success' : 'info'" effect="plain">{{ scope.row.status }}</el-tag></template></el-table-column>
         <el-table-column prop="createdAt" label="创建时间" min-width="190" />
+        <el-table-column label="操作" width="150"><template #default="scope"><el-button link type="primary" @click="openCourseEdit(scope.row)">编辑</el-button><el-button link :type="scope.row.status === 'ARCHIVED' ? 'success' : 'warning'" @click="toggleCourseArchive(scope.row)">{{ scope.row.status === 'ARCHIVED' ? '恢复' : '归档' }}</el-button></template></el-table-column>
       </el-table>
       <EmptyState v-else title="暂无课程" description="教师创建课程后会在这里显示。" />
     </section>
@@ -135,6 +180,19 @@ onMounted(load)
         <el-form-item label="初始状态"><el-select v-model="semesterForm.status" style="width:100%"><el-option label="规划中" value="PLANNED" /><el-option label="进行中" value="ACTIVE" /><el-option label="已结束" value="CLOSED" /></el-select></el-form-item>
       </el-form>
       <template #footer><el-button @click="semesterVisible=false">取消</el-button><el-button type="primary" @click="createSemester">创建学期</el-button></template>
+    </el-dialog>
+    <el-dialog v-model="courseEditVisible" title="编辑课程" width="min(520px,94vw)">
+      <el-form label-position="top">
+        <el-form-item label="课程名称"><el-input v-model="courseForm.name" /></el-form-item>
+        <el-form-item label="简介"><el-input v-model="courseForm.description" type="textarea" /></el-form-item>
+        <el-form-item label="课程状态">
+          <el-select v-model="courseForm.status" style="width:100%">
+            <el-option label="进行中（ACTIVE）" value="ACTIVE" />
+            <el-option label="已归档（ARCHIVED）" value="ARCHIVED" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer><el-button @click="courseEditVisible=false">取消</el-button><el-button type="primary" @click="saveCourseEdit">保存</el-button></template>
     </el-dialog>
   </div>
 </template>

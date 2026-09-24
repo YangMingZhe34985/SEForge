@@ -212,7 +212,7 @@ test('教师创建课程并上传课程资料', async ({ page }) => {
     return undefined
   })
 
-  await page.goto('/courses')
+  await page.goto('/teacher')
   await page.getByRole('button', { name: '创建课程' }).click()
   const dialog = page.getByRole('dialog', { name: '创建课程' })
   await dialog.locator('.el-form-item').filter({ hasText: '课程编号' }).locator('input').fill('SE-2026')
@@ -220,6 +220,7 @@ test('教师创建课程并上传课程资料', async ({ page }) => {
   await dialog.locator('.el-form-item').filter({ hasText: '所属学期' }).locator('.el-select').click()
   await page.getByRole('option', { name: '2026 秋季' }).click()
   await dialog.getByRole('button', { name: '创建', exact: true }).click()
+  await expect(page).toHaveURL(/\/teacher\/courses\/course-new$/)
   await expect(page.getByText('软件工程实践', { exact: true }).first()).toBeVisible()
 
   await page.locator('input[type="file"]').setInputFiles({
@@ -301,12 +302,13 @@ test('学生注册、通过邀请码加入并查看授权课程资源', async ({
   const loginForm = page.locator('form').filter({ has: page.getByRole('button', { name: '进入工作台' }) })
   await loginForm.locator('.el-form-item').filter({ hasText: '密码' }).locator('input').fill('SecurePass-2026')
   await loginForm.getByRole('button', { name: '进入工作台' }).click()
-  await expect(page).toHaveURL(/\/courses$/)
+  await expect(page).toHaveURL(/\/student$/)
 
   await page.getByRole('button', { name: '使用邀请码加入' }).click()
   const joinDialog = page.getByRole('dialog', { name: '加入课程' })
   await joinDialog.getByPlaceholder('请输入课程邀请码').fill('JOIN-SE-102')
   await joinDialog.getByRole('button', { name: '加入', exact: true }).click()
+  await expect(page).toHaveURL(/\/student\/courses\/course-phase1$/)
   await expect(page.getByText('软件工程基础', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('课程大纲.pdf', { exact: true })).toBeVisible()
   expect(joinBody).toEqual({ inviteCode: 'JOIN-SE-102' })
@@ -342,11 +344,12 @@ test('学生通过邀请码加入课程并完成带引用问答', async ({ page 
     return undefined
   })
 
-  await page.goto('/courses')
+  await page.goto('/student')
   await page.getByRole('button', { name: '使用邀请码加入' }).click()
   const joinDialog = page.getByRole('dialog', { name: '加入课程' })
   await joinDialog.getByPlaceholder('请输入课程邀请码').fill('JOIN-SE-101')
   await joinDialog.getByRole('button', { name: '加入', exact: true }).click()
+  await expect(page).toHaveURL(/\/student\/courses\/course-1$/)
   await expect(page.getByText('软件工程导论', { exact: true }).first()).toBeVisible()
   await page.getByRole('button', { name: '进入课程助手' }).click()
 
@@ -388,7 +391,7 @@ test('学生保存作业草稿、获取 Tutor 提示并正式提交', async ({ p
     return undefined
   })
 
-  await page.goto('/courses/course-1/assignments')
+  await page.goto('/student/courses/course-1/assignments')
   await page.getByPlaceholder('输入你的答案和推理过程').fill('连接需求与参与者目标')
   await expect.poll(() => draftSaved).toBe(true)
   await page.getByRole('button', { name: '请求辅导' }).click()
@@ -435,7 +438,7 @@ test('教师配置题目、Rubric 与 Tutor 策略后发布作业', async ({ pag
     return undefined
   })
 
-  await page.goto('/courses/course-1/assignments')
+  await page.goto('/teacher/courses/course-1/assignments')
   await page.getByRole('button', { name: '添加题目' }).click()
   const questionDialog = page.getByRole('dialog', { name: '添加题目' })
   await questionDialog.locator('.el-form-item').filter({ hasText: '题目' }).locator('textarea').fill('分析需求可追踪性的价值')
@@ -472,7 +475,7 @@ test('教师查看 AI 建议后确认最终成绩', async ({ page }) => {
     return undefined
   })
 
-  await page.goto('/reviews')
+  await page.goto('/teacher/courses/course-1/reviews')
   await page.getByRole('tab', { name: '作业 Review' }).click()
   await page.getByRole('button', { name: /作业提交 #submission-1/ }).click()
   await expect(page.getByText('AI 建议分')).toBeVisible()
@@ -481,4 +484,49 @@ test('教师查看 AI 建议后确认最终成绩', async ({ page }) => {
   await dialog.getByRole('button', { name: '确认并发布' }).click()
   await expect.poll(() => confirmed).toBe(true)
   await expect(page.getByText('最终成绩已由教师确认')).toBeVisible()
+})
+
+test('管理员查看平台审计日志', async ({ page }) => {
+  await mockPlatform(page, 'admin', [], (path, method) => {
+    if (path === '/admin/audit-logs' && method === 'GET') {
+      return {
+        data: pageOf([
+          { id: '9', actorId: '1', actorUsername: 'admin', courseId: null, action: 'ADMIN_USER_CREATE', targetType: 'USER', targetId: '2', outcome: 'SUCCEEDED', traceId: 'trace-9', occurredAt: now },
+          { id: '8', actorId: null, actorUsername: null, courseId: null, action: 'AUTH_LOGIN', targetType: 'USER', targetId: '3', outcome: 'REJECTED', traceId: 'trace-8', occurredAt: now },
+        ]),
+      }
+    }
+    return undefined
+  })
+
+  await page.goto('/admin/audit')
+  await expect(page.getByText('ADMIN_USER_CREATE')).toBeVisible()
+  await expect(page.getByText('SUCCEEDED').first()).toBeVisible()
+  await expect(page.getByText('REJECTED').first()).toBeVisible()
+  // entries without an actor fall back to the system label
+  await expect(page.getByText('系统').first()).toBeVisible()
+  await expect(page.getByText('trace-9')).toBeVisible()
+})
+
+test('教师归档课程后课程标记为已归档', async ({ page }) => {
+  const course: Course = {
+    id: 'course-1', code: 'SE-101', name: '软件工程导论', description: '需求与设计基础', semesterId: 'semester-1',
+    semesterName: '2026 秋季', role: 'TEACHER', memberCount: 32, createdAt: now,
+  }
+  let patchBody: Record<string, unknown> | undefined
+  await mockPlatform(page, 'teacher', [course], (path, method, request) => {
+    if (path === '/courses/course-1' && method === 'PATCH') {
+      patchBody = request.postDataJSON() as Record<string, unknown>
+      return { data: { ...course, status: 'ARCHIVED' } }
+    }
+    return undefined
+  })
+
+  await page.goto('/teacher/courses/course-1')
+  await page.getByRole('button', { name: '归档课程' }).click()
+  await page.getByRole('dialog', { name: '归档课程' }).getByRole('button', { name: 'OK' }).click()
+  await expect.poll(() => patchBody !== undefined).toBe(true)
+  expect(patchBody).toEqual({ status: 'ARCHIVED' })
+  await expect(page.getByRole('button', { name: '恢复课程' })).toBeVisible()
+  await expect(page.getByText('已归档').first()).toBeVisible()
 })

@@ -65,4 +65,16 @@ describe('courseApi management contracts', () => {
       data: input,
     })
   })
+
+  it('updates and archives a course through the PATCH contract', async () => {
+    requestMock.mockResolvedValueOnce({ id: '42', status: 'ARCHIVED' })
+
+    await courseApi.update('42', { name: '软件工程实践', status: 'ARCHIVED' })
+
+    expect(requestMock).toHaveBeenCalledWith({
+      url: '/courses/42',
+      method: 'PATCH',
+      data: { name: '软件工程实践', status: 'ARCHIVED' },
+    })
+  })
 })

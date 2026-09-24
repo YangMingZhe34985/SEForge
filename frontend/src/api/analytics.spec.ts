@@ -71,16 +71,4 @@ describe('analyticsApi contracts', () => {
       { date: '2026-09-22T08:00:00Z', value: 3 },
     ])
   })
-
-  it('updates platform roles through the administrator contract', async () => {
-    requestMock.mockResolvedValueOnce({ id: 'user-1' })
-
-    await (await import('./analytics')).adminApi.setRoles('user-1', ['USER', 'ADMIN'])
-
-    expect(requestMock).toHaveBeenCalledWith({
-      url: '/admin/users/user-1/roles',
-      method: 'PUT',
-      data: { roles: ['USER', 'ADMIN'] },
-    })
-  })
 })

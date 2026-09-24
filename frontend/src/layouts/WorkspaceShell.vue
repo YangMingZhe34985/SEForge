@@ -3,20 +3,25 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  ChatDotRound,
-  Collection,
-  DataAnalysis,
-  DocumentChecked,
   Fold,
-  Histogram,
   Menu as MenuIcon,
-  Reading,
-  Setting,
+  Position,
   SwitchButton,
   User,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useCourseStore } from '@/stores/courses'
+import type { WorkspaceNavItem, WorkspaceSwitchLink } from './navigation'
+
+const props = withDefaults(defineProps<{
+  navigation: WorkspaceNavItem[]
+  workspaceLabel: string
+  showCourseSwitcher?: boolean
+  switchLinks?: WorkspaceSwitchLink[]
+}>(), {
+  showCourseSwitcher: false,
+  switchLinks: () => [],
+})
 
 const route = useRoute()
 const router = useRouter()
@@ -24,17 +29,9 @@ const auth = useAuthStore()
 const courseStore = useCourseStore()
 const collapsed = ref(false)
 
-const navigation = computed(() => {
-  const courseId = courseStore.selectedCourseId
-  return [
-    { label: '我的课程', icon: Collection, to: { name: 'courses' }, visible: true, enabled: true },
-    { label: '课程助手', icon: ChatDotRound, to: courseId ? { name: 'assistant', params: { courseId } } : { name: 'courses' }, visible: true, enabled: Boolean(courseId) },
-    { label: '作业与 Tutor', icon: Reading, to: courseId ? { name: 'assignments', params: { courseId } } : { name: 'courses' }, visible: true, enabled: Boolean(courseId) },
-    { label: '智能评审', icon: DocumentChecked, to: { name: 'reviews' }, visible: auth.isAdmin || courseStore.canManageSelected, enabled: Boolean(courseId) },
-    { label: '成绩与反馈', icon: Histogram, to: { name: 'grades' }, visible: true, enabled: true },
-    { label: '教学 Dashboard', icon: DataAnalysis, to: { name: 'dashboard' }, visible: auth.isAdmin || courseStore.canManageSelected, enabled: Boolean(courseId) },
-    { label: '用户管理', icon: Setting, to: { name: 'admin-users' }, visible: auth.isAdmin, enabled: true },
-  ]
+const roleLabel = computed(() => {
+  if (auth.isAdmin) return '管理员'
+  return auth.user?.accountType === 'TEACHER' ? '教师' : '学生'
 })
 
 async function handleLogout() {
@@ -51,7 +48,7 @@ function selectCourse(courseId: string) {
 }
 
 onMounted(async () => {
-  if (courseStore.courses.length) return
+  if (!props.showCourseSwitcher || courseStore.courses.length) return
   try {
     await courseStore.load()
   } catch (error) {
@@ -73,16 +70,16 @@ watch(
     <aside class="sidebar">
       <div class="brand">
         <span class="brand__mark">SF</span>
-        <div v-if="!collapsed"><strong>SEForge</strong><small>学习与实践平台</small></div>
+        <div v-if="!collapsed"><strong>SEForge</strong><small>{{ workspaceLabel }}</small></div>
       </div>
 
       <nav class="sidebar__nav" aria-label="主导航">
         <template v-for="item in navigation" :key="item.label">
           <router-link
-            v-if="item.visible"
+            v-if="item.visible !== false"
             :to="item.to"
             class="nav-item"
-            :class="{ 'nav-item--disabled': !item.enabled }"
+            :class="{ 'nav-item--disabled': item.enabled === false }"
             :title="collapsed ? item.label : undefined"
           >
             <el-icon><component :is="item.icon" /></el-icon>
@@ -99,7 +96,7 @@ watch(
 
     <section class="workspace">
       <header class="topbar">
-        <div class="course-switcher">
+        <div v-if="showCourseSwitcher" class="course-switcher">
           <span>当前课程</span>
           <el-select
             :model-value="courseStore.selectedCourseId"
@@ -111,14 +108,16 @@ watch(
             <el-option v-for="course in courseStore.courses" :key="course.id" :label="`${course.code} · ${course.name}`" :value="course.id" />
           </el-select>
         </div>
+        <div v-else />
         <el-dropdown trigger="click">
           <button type="button" class="user-menu">
             <span class="avatar"><el-icon><User /></el-icon></span>
-            <span><strong>{{ auth.user?.displayName }}</strong><small>{{ auth.user?.accountType === 'TEACHER' ? '教师' : '学生' }}</small></span>
+            <span><strong>{{ auth.user?.displayName }}</strong><small>{{ roleLabel }}</small></span>
           </button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item :icon="SwitchButton" @click="handleLogout">退出登录</el-dropdown-item>
+              <el-dropdown-item v-for="link in switchLinks" :key="link.label" :icon="Position" @click="router.push(link.to)">{{ link.label }}</el-dropdown-item>
+              <el-dropdown-item :icon="SwitchButton" divided @click="handleLogout">退出登录</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>

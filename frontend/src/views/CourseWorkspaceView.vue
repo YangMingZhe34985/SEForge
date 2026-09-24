@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -21,18 +21,23 @@ import type {
   KnowledgePoint,
 } from '@/types/domain'
 
+const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const store = useCourseStore()
+
+const courseId = computed(() => String(route.params.courseId ?? ''))
+// Route names are workspace-scoped (teacher-course-* / student-course-*); the shared
+// component derives link targets from the workspace the route belongs to.
+const workspace = computed<'teacher' | 'student'>(() => (route.meta.workspace === 'teacher' ? 'teacher' : 'student'))
 const activeTab = ref('resources')
-const createVisible = ref(false)
-const joinVisible = ref(false)
 const resourceVisible = ref(false)
 const chapterVisible = ref(false)
 const pointVisible = ref(false)
 const classVisible = ref(false)
 const inviteVisible = ref(false)
 const announcementVisible = ref(false)
+const editVisible = ref(false)
 const detailLoading = ref(false)
 const documentUploading = ref(false)
 const resources = ref<CourseResource[]>([])
@@ -49,8 +54,7 @@ const announcementTotal = ref(0)
 const announcementPageSize = 10
 const memberPage = ref(1)
 const memberPageSize = 10
-const joinCode = ref('')
-const courseForm = reactive({ code: '', name: '', description: '', semesterId: '' })
+const courseForm = reactive({ name: '', description: '', status: 'ACTIVE' as 'ACTIVE' | 'ARCHIVED' })
 const resourceForm = reactive({ name: '', description: '', resourceType: 'LINK', objectKey: '', contentType: '', chapterId: '' })
 const chapterForm = reactive({ title: '', description: '', sortOrder: 1, parentId: undefined as string | undefined })
 const pointForm = reactive({ title: '', description: '', chapterId: '', sortOrder: 1 })
@@ -65,8 +69,7 @@ const announcementForm = reactive({ title: '', content: '' })
 const terminalJobStatuses = new Set(['COMPLETED', 'FAILED', 'DEAD_LETTER', 'CANCELLED'])
 let detailGeneration = 0
 let componentMounted = true
-const selected = computed(() => store.selectedCourse)
-const canCreateCourse = computed(() => auth.isAdmin || auth.user?.accountType === 'TEACHER')
+const selected = computed(() => store.courses.find((course) => course.id === courseId.value) ?? null)
 const canManageSelected = computed(() => auth.isAdmin || ['TEACHER', 'TA'].includes(selected.value?.role || ''))
 const canAdministerSelected = computed(() => auth.isAdmin || selected.value?.role === 'TEACHER')
 const pagedMembers = computed(() => {
@@ -74,9 +77,9 @@ const pagedMembers = computed(() => {
   return members.value.slice(start, start + memberPageSize)
 })
 
-async function loadDetails(courseId: string | null) {
+async function loadDetails(targetCourseId: string | null) {
   const generation = ++detailGeneration
-  if (!courseId) {
+  if (!targetCourseId) {
     resources.value = []
     documents.value = []
     chapters.value = []
@@ -93,13 +96,13 @@ async function loadDetails(courseId: string | null) {
   detailLoading.value = true
   try {
     const [resourceList, documentList, chapterList, pointList, announcementPageResult] = await Promise.all([
-      courseApi.resources(courseId),
-      courseApi.documents(courseId),
-      courseApi.chapters(courseId),
-      courseApi.knowledgePoints(courseId),
-      courseApi.announcements(courseId, 0, announcementPageSize),
+      courseApi.resources(targetCourseId),
+      courseApi.documents(targetCourseId),
+      courseApi.chapters(targetCourseId),
+      courseApi.knowledgePoints(targetCourseId),
+      courseApi.announcements(targetCourseId, 0, announcementPageSize),
     ])
-    const course = store.courses.find((item) => item.id === courseId)
+    const course = store.courses.find((item) => item.id === targetCourseId)
     const mayViewTeaching = auth.isAdmin || ['TEACHER', 'TA'].includes(course?.role || '')
     const mayAdminister = auth.isAdmin || course?.role === 'TEACHER'
     let classList: CourseClass[] = []
@@ -107,14 +110,14 @@ async function loadDetails(courseId: string | null) {
     let inviteList: CourseInvite[] = []
     if (mayViewTeaching) {
       const teachingData = await Promise.all([
-        courseApi.classes(courseId),
-        courseApi.members(courseId),
+        courseApi.classes(targetCourseId),
+        courseApi.members(targetCourseId),
       ])
       classList = teachingData[0]
       memberList = teachingData[1]
-      if (mayAdminister) inviteList = await courseApi.invites(courseId)
+      if (mayAdminister) inviteList = await courseApi.invites(targetCourseId)
     }
-    if (!componentMounted || generation !== detailGeneration || store.selectedCourseId !== courseId) return
+    if (!componentMounted || generation !== detailGeneration || courseId.value !== targetCourseId) return
 
     resources.value = resourceList
     documents.value = documentList
@@ -132,7 +135,7 @@ async function loadDetails(courseId: string | null) {
       if (!document.job) return
       documentJobs[document.id] = document.job
       if (!terminalJobStatuses.has(document.job.status)) {
-        void monitorDocumentJob(document.id, document.job.id, courseId, generation)
+        void monitorDocumentJob(document.id, document.job.id, targetCourseId, generation)
       }
     })
   } catch (error) {
@@ -144,24 +147,53 @@ async function loadDetails(courseId: string | null) {
   }
 }
 
-async function createCourse() {
-  if (!courseForm.code.trim() || !courseForm.name.trim() || !courseForm.semesterId) return ElMessage.warning('请填写课程编号、名称和学期')
-  try {
-    await store.create({ ...courseForm })
-    createVisible.value = false
-    Object.assign(courseForm, { code: '', name: '', description: '', semesterId: '' })
-    ElMessage.success('课程已创建')
-  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '创建失败') }
+function openEditDialog() {
+  if (!selected.value) return
+  Object.assign(courseForm, {
+    name: selected.value.name,
+    description: selected.value.description || '',
+    status: selected.value.status,
+  })
+  editVisible.value = true
 }
 
-async function joinCourse() {
-  if (!joinCode.value.trim()) return
+async function saveCourseEdit() {
+  if (!selected.value || !courseForm.name.trim()) return ElMessage.warning('请填写课程名称')
   try {
-    await store.join(joinCode.value.trim())
-    joinVisible.value = false
-    joinCode.value = ''
-    ElMessage.success('已加入课程')
-  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '加入失败') }
+    const updated = await courseApi.update(selected.value.id, {
+      name: courseForm.name.trim(),
+      description: courseForm.description,
+      status: courseForm.status,
+    })
+    const index = store.courses.findIndex((course) => course.id === updated.id)
+    if (index >= 0) store.courses[index] = { ...store.courses[index], ...updated }
+    editVisible.value = false
+    ElMessage.success(updated.status === 'ARCHIVED' ? '课程已更新并归档' : '课程已更新')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '课程更新失败')
+  }
+}
+
+async function toggleArchive() {
+  if (!selected.value) return
+  const archiving = selected.value.status !== 'ARCHIVED'
+  try {
+    await ElMessageBox.confirm(
+      archiving
+        ? `归档后“${selected.value.name}”将不再接受新成员加入，确定归档吗？`
+        : `确定恢复“${selected.value.name}”为进行中吗？`,
+      archiving ? '归档课程' : '恢复课程',
+      { type: 'warning' },
+    )
+    const updated = await courseApi.update(selected.value.id, { status: archiving ? 'ARCHIVED' : 'ACTIVE' })
+    const index = store.courses.findIndex((course) => course.id === updated.id)
+    if (index >= 0) store.courses[index] = { ...store.courses[index], ...updated }
+    ElMessage.success(archiving ? '课程已归档' : '课程已恢复')
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error instanceof Error ? error.message : '操作失败')
+    }
+  }
 }
 
 async function createResource() {
@@ -185,17 +217,17 @@ async function createResource() {
 async function uploadDocument(files: FileList | null) {
   const file = files?.item(0)
   if (!selected.value || !file) return
-  const courseId = selected.value.id
+  const targetCourseId = selected.value.id
   documentUploading.value = true
   try {
-    const result = await courseApi.uploadDocument(courseId, file)
-    if (!componentMounted || selected.value?.id !== courseId) return
+    const result = await courseApi.uploadDocument(targetCourseId, file)
+    if (!componentMounted || courseId.value !== targetCourseId) return
     const index = documents.value.findIndex((item) => item.id === result.document.id)
     if (index >= 0) documents.value[index] = result.document
     else documents.value.unshift(result.document)
     if (result.job) {
       documentJobs[result.document.id] = result.job
-      void monitorDocumentJob(result.document.id, result.job.id, courseId, detailGeneration)
+      void monitorDocumentJob(result.document.id, result.job.id, targetCourseId, detailGeneration)
     }
     ElMessage.success(result.duplicate ? '相同文档已存在，已复用摄取任务' : '文档已上传并进入摄取队列')
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '文档上传失败') }
@@ -204,30 +236,30 @@ async function uploadDocument(files: FileList | null) {
 
 async function reindexDocument(document: KnowledgeDocument) {
   if (!selected.value) return
-  const courseId = selected.value.id
+  const targetCourseId = selected.value.id
   try {
-    const job = await courseApi.reindexDocument(courseId, document.id)
-    if (!componentMounted || selected.value?.id !== courseId) return
+    const job = await courseApi.reindexDocument(targetCourseId, document.id)
+    if (!componentMounted || courseId.value !== targetCourseId) return
     documentJobs[document.id] = job
     document.status = 'QUEUED'
-    void monitorDocumentJob(document.id, job.id, courseId, detailGeneration)
+    void monitorDocumentJob(document.id, job.id, targetCourseId, detailGeneration)
     ElMessage.success('已重新进入摄取队列')
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '重建索引失败') }
 }
 
-async function monitorDocumentJob(documentId: string, jobId: string, courseId: string, generation: number) {
+async function monitorDocumentJob(documentId: string, jobId: string, targetCourseId: string, generation: number) {
   for (let attempt = 0; attempt < 180; attempt += 1) {
     if (!componentMounted || generation !== detailGeneration
-      || selected.value?.id !== courseId || documentJobs[documentId]?.id !== jobId) return
+      || courseId.value !== targetCourseId || documentJobs[documentId]?.id !== jobId) return
     try {
       const job = await jobApi.get(jobId)
       if (!componentMounted || generation !== detailGeneration
-        || selected.value?.id !== courseId || documentJobs[documentId]?.id !== jobId) return
+        || courseId.value !== targetCourseId || documentJobs[documentId]?.id !== jobId) return
       documentJobs[documentId] = job
       if (terminalJobStatuses.has(job.status)) {
         if (job.status === 'COMPLETED') ElMessage.success('文档摄取已完成')
         else if (job.status !== 'CANCELLED') ElMessage.error(job.error || `文档摄取失败：${job.status}`)
-        await loadDetails(courseId)
+        await loadDetails(targetCourseId)
         return
       }
     } catch (error) {
@@ -236,7 +268,7 @@ async function monitorDocumentJob(documentId: string, jobId: string, courseId: s
     }
     await new Promise((resolve) => window.setTimeout(resolve, 1_000))
   }
-  if (componentMounted && generation === detailGeneration && selected.value?.id === courseId) {
+  if (componentMounted && generation === detailGeneration && courseId.value === targetCourseId) {
     ElMessage.warning('摄取任务仍在运行，可稍后手动刷新')
   }
 }
@@ -410,9 +442,16 @@ function formatDateTime(value: string | null): string {
   return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '不限'
 }
 
-watch(() => store.selectedCourseId, (courseId) => { void loadDetails(courseId) }, { immediate: true })
+watch(() => store.selectedCourseId, (id) => { void loadDetails(id) }, { immediate: true })
+watch(courseId, (id) => {
+  // The router guard keeps the store selection in sync; this covers direct param changes.
+  if (id && store.selectedCourseId !== id) store.select(id)
+})
 onMounted(async () => {
-  if (!store.courses.length) await store.load()
+  if (!store.courses.length) {
+    try { await store.load() } catch { /* the router guard already surfaces load failures */ }
+  }
+  if (courseId.value && store.selectedCourseId !== courseId.value) store.select(courseId.value)
 })
 onBeforeUnmount(() => {
   componentMounted = false
@@ -422,121 +461,126 @@ onBeforeUnmount(() => {
 
 <template>
   <div>
-    <PageHeader title="我的课程" description="课程是问答、作业、评审和教学分析的安全边界。">
-      <div class="button-row">
-        <el-button v-if="!auth.isAdmin" @click="joinVisible = true">使用邀请码加入</el-button>
-        <el-button v-if="canCreateCourse" type="primary" @click="createVisible = true">创建课程</el-button>
-      </div>
-    </PageHeader>
-
-    <div v-if="store.courses.length" class="course-strip">
-      <button v-for="course in store.courses" :key="course.id" type="button" class="course-card" :class="{ active: course.id === store.selectedCourseId }" @click="store.select(course.id)">
-        <span class="course-card__code">{{ course.code }}</span>
-        <strong>{{ course.name }}</strong>
-        <p>{{ course.description || '暂无课程简介' }}</p>
-        <span class="course-card__meta">{{ course.semesterName || '未设置学期' }} · {{ course.memberCount }} 人 · {{ course.role }}</span>
-      </button>
-    </div>
-    <div v-else class="panel"><EmptyState title="还没有课程" description="学生可使用教师发放的邀请码加入；教师可创建第一门课程。" /></div>
-
-    <section v-if="selected" class="course-workspace panel">
-      <div class="panel__header">
-        <div><h2>{{ selected.name }}</h2><span class="muted">{{ selected.code }} · {{ selected.semesterName }}</span></div>
+    <template v-if="selected">
+      <PageHeader :title="selected.name" :description="`${selected.code} · ${selected.semesterName || '未设置学期'}`">
         <div class="button-row">
-          <el-button @click="router.push({ name: 'assistant', params: { courseId: selected.id } })">进入课程助手</el-button>
-          <el-button @click="router.push({ name: 'assignments', params: { courseId: selected.id } })">查看作业</el-button>
+          <el-tag v-if="selected.status === 'ARCHIVED'" type="warning" effect="plain">已归档</el-tag>
+          <el-button @click="router.push({ name: `${workspace}-course-assistant`, params: { courseId: selected.id } })">进入课程助手</el-button>
+          <el-button @click="router.push({ name: `${workspace}-course-assignments`, params: { courseId: selected.id } })">查看作业</el-button>
+          <template v-if="canManageSelected">
+            <el-button @click="router.push({ name: `${workspace}-course-reviews`, params: { courseId: selected.id } })">智能评审</el-button>
+            <el-button @click="router.push({ name: `${workspace}-course-dashboard`, params: { courseId: selected.id } })">教学 Dashboard</el-button>
+          </template>
+          <template v-if="canAdministerSelected">
+            <el-button @click="openEditDialog">编辑课程</el-button>
+            <el-button :type="selected.status === 'ARCHIVED' ? 'success' : 'warning'" @click="toggleArchive">
+              {{ selected.status === 'ARCHIVED' ? '恢复课程' : '归档课程' }}
+            </el-button>
+          </template>
         </div>
-      </div>
-      <el-tabs v-model="activeTab" class="course-tabs" v-loading="detailLoading">
-        <el-tab-pane label="课程公告" name="announcements">
-          <div class="tab-toolbar"><p>课程成员可查看公告，公告按发布时间倒序排列。</p><el-button v-if="canManageSelected" type="primary" @click="announcementVisible = true">发布公告</el-button></div>
-          <div v-if="announcements.length" class="announcement-list">
-            <article v-for="announcement in announcements" :key="announcement.id" class="announcement-card">
-              <div class="announcement-card__header"><h3>{{ announcement.title }}</h3><time>{{ formatDateTime(announcement.publishedAt) }}</time></div>
-              <p>{{ announcement.content }}</p>
-            </article>
-          </div>
-          <EmptyState v-else title="暂无课程公告" description="教师或助教发布公告后，所有课程成员都能在这里看到。" />
-          <el-pagination v-if="announcementTotal > announcementPageSize" v-model:current-page="announcementPage" class="member-pagination" background layout="prev, pager, next" :page-size="announcementPageSize" :total="announcementTotal" @current-change="loadAnnouncements" />
-        </el-tab-pane>
-        <el-tab-pane label="课程资源" name="resources">
-          <div class="tab-toolbar"><p>文件统一通过知识文档上传并进入 MinIO 与摄取流程。</p><div class="button-row"><el-button @click="loadDetails(selected.id)">刷新状态</el-button><template v-if="canManageSelected"><label class="upload-button" :class="{ disabled: documentUploading }"><input type="file" accept=".pdf,.ppt,.pptx,.docx,.md,.txt" :disabled="documentUploading" @change="uploadDocument(($event.target as HTMLInputElement).files)" />{{ documentUploading ? '上传中…' : '上传知识文档' }}</label><el-button @click="resourceVisible = true">登记外部对象标识</el-button></template></div></div>
-          <el-table v-if="documents.length" :data="documents" class="document-table">
-            <el-table-column prop="name" label="知识文档" min-width="200" />
-            <el-table-column label="大小" width="100"><template #default="scope">{{ formatBytes(scope.row.sizeBytes) }}</template></el-table-column>
-            <el-table-column label="摄取状态" width="130"><template #default="scope"><StatusBadge :status="documentTaskStatus(scope.row)" /></template></el-table-column>
-            <el-table-column label="状态说明" min-width="180" show-overflow-tooltip><template #default="scope">{{ documentTaskError(scope.row) }}</template></el-table-column>
-            <el-table-column label="操作" width="270"><template #default="scope"><el-button link @click="downloadDocument(scope.row)">下载</el-button><template v-if="canManageSelected"><el-button v-if="isDocumentJobCancelling(scope.row)" link disabled>取消中…</el-button><el-button v-else-if="mayCancelDocumentJob(scope.row)" link type="warning" @click="cancelDocumentJob(scope.row)">取消任务</el-button><el-button link @click="reindexDocument(scope.row)">重建索引</el-button><el-button link type="danger" @click="deleteDocument(scope.row)">删除</el-button></template></template></el-table-column>
-          </el-table>
-          <EmptyState v-else title="暂无知识文档" description="上传 PDF、PPT/PPTX、Word、Markdown 或 TXT，完成后即可用于课程问答。" />
-          <h3 class="resource-heading">外部对象元数据（不会上传或校验对象）</h3>
-          <el-table v-if="resources.length" :data="resources">
-            <el-table-column prop="name" label="名称" min-width="180" />
-            <el-table-column prop="resourceType" label="类型" width="120" />
-            <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="objectKey" label="外部对象标识" min-width="220" show-overflow-tooltip />
-          </el-table>
-          <p v-else class="muted">暂无外部资源记录。</p>
-        </el-tab-pane>
-        <el-tab-pane label="章节" name="chapters">
-          <div class="tab-toolbar"><p>章节用于组织资源、知识点和问答引用。</p><el-button v-if="canManageSelected" @click="chapterVisible = true">添加章节</el-button></div>
-          <el-timeline v-if="chapters.length"><el-timeline-item v-for="chapter in chapters" :key="chapter.id" :timestamp="`排序 ${chapter.sortOrder}`"><strong>{{ chapter.title }}</strong><p class="muted">{{ chapter.description }}</p></el-timeline-item></el-timeline>
-          <EmptyState v-else title="暂无章节" />
-        </el-tab-pane>
-        <el-tab-pane label="知识点" name="knowledge">
-          <div class="tab-toolbar"><p>知识点将用于作业关联和教学分析。</p><el-button v-if="canManageSelected" @click="pointVisible = true">添加知识点</el-button></div>
-          <div v-if="knowledgePoints.length" class="tag-cloud"><el-tag v-for="point in knowledgePoints" :key="point.id" effect="plain" size="large">{{ point.title }}</el-tag></div>
-          <EmptyState v-else title="暂无知识点" />
-        </el-tab-pane>
-        <el-tab-pane v-if="canManageSelected" label="教学管理" name="teaching">
-          <section class="management-section">
-            <div class="tab-toolbar"><div><h3>教学班</h3><p>教学班可用于邀请码归属和后续班级维度统计。</p></div><el-button v-if="canAdministerSelected" @click="classVisible = true">创建教学班</el-button></div>
-            <el-table v-if="courseClasses.length" :data="courseClasses" stripe>
-              <el-table-column prop="code" label="班级代码" min-width="130" />
-              <el-table-column prop="name" label="班级名称" min-width="180" />
-              <el-table-column label="容量" width="100"><template #default="scope">{{ scope.row.capacity ?? '不限' }}</template></el-table-column>
-              <el-table-column label="类型" width="110"><template #default="scope"><el-tag v-if="scope.row.primaryClass" type="success" effect="plain">主教学班</el-tag><span v-else class="muted">普通班</span></template></el-table-column>
-            </el-table>
-            <EmptyState v-else title="暂无教学班" description="课程教师可以创建第一个教学班。" />
-          </section>
+      </PageHeader>
 
-          <section class="management-section">
-            <div class="tab-toolbar"><div><h3>课程邀请码</h3><p>邀请码可限定教学班、课程角色、使用次数和有效期。</p></div><el-button v-if="canAdministerSelected" type="primary" @click="inviteVisible = true">创建邀请码</el-button></div>
-            <template v-if="canAdministerSelected">
-              <el-table v-if="invites.length" :data="invites" stripe>
-                <el-table-column label="邀请码" min-width="175"><template #default="scope"><div class="invite-code"><code>{{ scope.row.code }}</code><el-button link type="primary" @click="copyInvite(scope.row.code)">复制</el-button></div></template></el-table-column>
-                <el-table-column label="教学班" min-width="150"><template #default="scope">{{ className(scope.row.classId) }}</template></el-table-column>
-                <el-table-column prop="memberRole" label="加入角色" width="105" />
-                <el-table-column label="使用次数" width="120"><template #default="scope">{{ scope.row.maxUses == null ? `${scope.row.usedCount} / 不限` : `${scope.row.usedCount} / ${scope.row.maxUses}` }}</template></el-table-column>
-                <el-table-column label="有效期" min-width="175"><template #default="scope">{{ formatDateTime(scope.row.expiresAt) }}</template></el-table-column>
-                <el-table-column label="状态" width="90"><template #default="scope"><el-tag :type="scope.row.active ? 'success' : 'info'">{{ scope.row.active ? '有效' : '失效' }}</el-tag></template></el-table-column>
+      <section class="course-workspace panel">
+        <el-tabs v-model="activeTab" class="course-tabs" v-loading="detailLoading">
+          <el-tab-pane label="课程公告" name="announcements">
+            <div class="tab-toolbar"><p>课程成员可查看公告，公告按发布时间倒序排列。</p><el-button v-if="canManageSelected" type="primary" @click="announcementVisible = true">发布公告</el-button></div>
+            <div v-if="announcements.length" class="announcement-list">
+              <article v-for="announcement in announcements" :key="announcement.id" class="announcement-card">
+                <div class="announcement-card__header"><h3>{{ announcement.title }}</h3><time>{{ formatDateTime(announcement.publishedAt) }}</time></div>
+                <p>{{ announcement.content }}</p>
+              </article>
+            </div>
+            <EmptyState v-else title="暂无课程公告" description="教师或助教发布公告后，所有课程成员都能在这里看到。" />
+            <el-pagination v-if="announcementTotal > announcementPageSize" v-model:current-page="announcementPage" class="member-pagination" background layout="prev, pager, next" :page-size="announcementPageSize" :total="announcementTotal" @current-change="loadAnnouncements" />
+          </el-tab-pane>
+          <el-tab-pane label="课程资源" name="resources">
+            <div class="tab-toolbar"><p>文件统一通过知识文档上传并进入 MinIO 与摄取流程。</p><div class="button-row"><el-button @click="loadDetails(selected.id)">刷新状态</el-button><template v-if="canManageSelected"><label class="upload-button" :class="{ disabled: documentUploading }"><input type="file" accept=".pdf,.ppt,.pptx,.docx,.md,.txt" :disabled="documentUploading" @change="uploadDocument(($event.target as HTMLInputElement).files)" />{{ documentUploading ? '上传中…' : '上传知识文档' }}</label><el-button @click="resourceVisible = true">登记外部对象标识</el-button></template></div></div>
+            <el-table v-if="documents.length" :data="documents" class="document-table">
+              <el-table-column prop="name" label="知识文档" min-width="200" />
+              <el-table-column label="大小" width="100"><template #default="scope">{{ formatBytes(scope.row.sizeBytes) }}</template></el-table-column>
+              <el-table-column label="摄取状态" width="130"><template #default="scope"><StatusBadge :status="documentTaskStatus(scope.row)" /></template></el-table-column>
+              <el-table-column label="状态说明" min-width="180" show-overflow-tooltip><template #default="scope">{{ documentTaskError(scope.row) }}</template></el-table-column>
+              <el-table-column label="操作" width="270"><template #default="scope"><el-button link @click="downloadDocument(scope.row)">下载</el-button><template v-if="canManageSelected"><el-button v-if="isDocumentJobCancelling(scope.row)" link disabled>取消中…</el-button><el-button v-else-if="mayCancelDocumentJob(scope.row)" link type="warning" @click="cancelDocumentJob(scope.row)">取消任务</el-button><el-button link @click="reindexDocument(scope.row)">重建索引</el-button><el-button link type="danger" @click="deleteDocument(scope.row)">删除</el-button></template></template></el-table-column>
+            </el-table>
+            <EmptyState v-else title="暂无知识文档" description="上传 PDF、PPT/PPTX、Word、Markdown 或 TXT，完成后即可用于课程问答。" />
+            <h3 class="resource-heading">外部对象元数据（不会上传或校验对象）</h3>
+            <el-table v-if="resources.length" :data="resources">
+              <el-table-column prop="name" label="名称" min-width="180" />
+              <el-table-column prop="resourceType" label="类型" width="120" />
+              <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
+              <el-table-column prop="objectKey" label="外部对象标识" min-width="220" show-overflow-tooltip />
+            </el-table>
+            <p v-else class="muted">暂无外部资源记录。</p>
+          </el-tab-pane>
+          <el-tab-pane label="章节" name="chapters">
+            <div class="tab-toolbar"><p>章节用于组织资源、知识点和问答引用。</p><el-button v-if="canManageSelected" @click="chapterVisible = true">添加章节</el-button></div>
+            <el-timeline v-if="chapters.length"><el-timeline-item v-for="chapter in chapters" :key="chapter.id" :timestamp="`排序 ${chapter.sortOrder}`"><strong>{{ chapter.title }}</strong><p class="muted">{{ chapter.description }}</p></el-timeline-item></el-timeline>
+            <EmptyState v-else title="暂无章节" />
+          </el-tab-pane>
+          <el-tab-pane label="知识点" name="knowledge">
+            <div class="tab-toolbar"><p>知识点将用于作业关联和教学分析。</p><el-button v-if="canManageSelected" @click="pointVisible = true">添加知识点</el-button></div>
+            <div v-if="knowledgePoints.length" class="tag-cloud"><el-tag v-for="point in knowledgePoints" :key="point.id" effect="plain" size="large">{{ point.title }}</el-tag></div>
+            <EmptyState v-else title="暂无知识点" />
+          </el-tab-pane>
+          <el-tab-pane v-if="canManageSelected" label="教学管理" name="teaching">
+            <section class="management-section">
+              <div class="tab-toolbar"><div><h3>教学班</h3><p>教学班可用于邀请码归属和后续班级维度统计。</p></div><el-button v-if="canAdministerSelected" @click="classVisible = true">创建教学班</el-button></div>
+              <el-table v-if="courseClasses.length" :data="courseClasses" stripe>
+                <el-table-column prop="code" label="班级代码" min-width="130" />
+                <el-table-column prop="name" label="班级名称" min-width="180" />
+                <el-table-column label="容量" width="100"><template #default="scope">{{ scope.row.capacity ?? '不限' }}</template></el-table-column>
+                <el-table-column label="类型" width="110"><template #default="scope"><el-tag v-if="scope.row.primaryClass" type="success" effect="plain">主教学班</el-tag><span v-else class="muted">普通班</span></template></el-table-column>
               </el-table>
-              <EmptyState v-else title="暂无邀请码" description="创建邀请码后可复制发给学生或助教。" />
-            </template>
-            <el-alert v-else title="助教可以查看成员；邀请码与教学班创建由课程教师管理。" type="info" :closable="false" show-icon />
-          </section>
+              <EmptyState v-else title="暂无教学班" description="课程教师可以创建第一个教学班。" />
+            </section>
 
-          <section class="management-section">
-            <div class="tab-toolbar"><div><h3>课程成员</h3><p>共 {{ members.length }} 名有效成员，成员列表由服务端课程权限控制。</p></div></div>
-            <el-table v-if="members.length" :data="pagedMembers" stripe>
-              <el-table-column prop="displayName" label="姓名" min-width="180" />
-              <el-table-column label="教学班" min-width="160"><template #default="scope">{{ className(scope.row.classId) }}</template></el-table-column>
-              <el-table-column prop="role" label="课程角色" width="115" />
-              <el-table-column label="加入时间" min-width="180"><template #default="scope">{{ formatDateTime(scope.row.joinedAt) }}</template></el-table-column>
-              <el-table-column v-if="canAdministerSelected" label="操作" width="100"><template #default="scope"><el-button v-if="scope.row.userId !== auth.user?.id && scope.row.role !== 'TEACHER'" link type="danger" @click="removeMember(scope.row)">移除</el-button><span v-else class="muted">—</span></template></el-table-column>
-            </el-table>
-            <EmptyState v-else title="暂无课程成员" />
-            <el-pagination v-if="members.length > memberPageSize" v-model:current-page="memberPage" class="member-pagination" background layout="prev, pager, next" :page-size="memberPageSize" :total="members.length" />
-          </section>
-        </el-tab-pane>
-      </el-tabs>
-    </section>
+            <section class="management-section">
+              <div class="tab-toolbar"><div><h3>课程邀请码</h3><p>邀请码可限定教学班、课程角色、使用次数和有效期。</p></div><el-button v-if="canAdministerSelected" type="primary" @click="inviteVisible = true">创建邀请码</el-button></div>
+              <template v-if="canAdministerSelected">
+                <el-table v-if="invites.length" :data="invites" stripe>
+                  <el-table-column label="邀请码" min-width="175"><template #default="scope"><div class="invite-code"><code>{{ scope.row.code }}</code><el-button link type="primary" @click="copyInvite(scope.row.code)">复制</el-button></div></template></el-table-column>
+                  <el-table-column label="教学班" min-width="150"><template #default="scope">{{ className(scope.row.classId) }}</template></el-table-column>
+                  <el-table-column prop="memberRole" label="加入角色" width="105" />
+                  <el-table-column label="使用次数" width="120"><template #default="scope">{{ scope.row.maxUses == null ? `${scope.row.usedCount} / 不限` : `${scope.row.usedCount} / ${scope.row.maxUses}` }}</template></el-table-column>
+                  <el-table-column label="有效期" min-width="175"><template #default="scope">{{ formatDateTime(scope.row.expiresAt) }}</template></el-table-column>
+                  <el-table-column label="状态" width="90"><template #default="scope"><el-tag :type="scope.row.active ? 'success' : 'info'">{{ scope.row.active ? '有效' : '失效' }}</el-tag></template></el-table-column>
+                </el-table>
+                <EmptyState v-else title="暂无邀请码" description="创建邀请码后可复制发给学生或助教。" />
+              </template>
+              <el-alert v-else title="助教可以查看成员；邀请码与教学班创建由课程教师管理。" type="info" :closable="false" show-icon />
+            </section>
 
-    <el-dialog v-model="createVisible" title="创建课程" width="min(520px, 94vw)">
-      <el-form label-position="top"><div class="form-grid"><el-form-item label="课程编号"><el-input v-model="courseForm.code" placeholder="SE-2026" /></el-form-item><el-form-item label="课程名称"><el-input v-model="courseForm.name" /></el-form-item></div><el-form-item label="所属学期"><el-select v-model="courseForm.semesterId" style="width:100%"><el-option v-for="item in store.semesters" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item><el-form-item label="简介"><el-input v-model="courseForm.description" type="textarea" /></el-form-item></el-form>
-      <template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" @click="createCourse">创建</el-button></template>
+            <section class="management-section">
+              <div class="tab-toolbar"><div><h3>课程成员</h3><p>共 {{ members.length }} 名有效成员，成员列表由服务端课程权限控制。</p></div></div>
+              <el-table v-if="members.length" :data="pagedMembers" stripe>
+                <el-table-column prop="displayName" label="姓名" min-width="180" />
+                <el-table-column label="教学班" min-width="160"><template #default="scope">{{ className(scope.row.classId) }}</template></el-table-column>
+                <el-table-column prop="role" label="课程角色" width="115" />
+                <el-table-column label="加入时间" min-width="180"><template #default="scope">{{ formatDateTime(scope.row.joinedAt) }}</template></el-table-column>
+                <el-table-column v-if="canAdministerSelected" label="操作" width="100"><template #default="scope"><el-button v-if="scope.row.userId !== auth.user?.id && scope.row.role !== 'TEACHER'" link type="danger" @click="removeMember(scope.row)">移除</el-button><span v-else class="muted">—</span></template></el-table-column>
+              </el-table>
+              <EmptyState v-else title="暂无课程成员" />
+              <el-pagination v-if="members.length > memberPageSize" v-model:current-page="memberPage" class="member-pagination" background layout="prev, pager, next" :page-size="memberPageSize" :total="members.length" />
+            </section>
+          </el-tab-pane>
+        </el-tabs>
+      </section>
+    </template>
+    <div v-else class="panel"><EmptyState title="课程不可用" description="该课程不存在，或当前账号无权访问。" /></div>
+
+    <el-dialog v-model="editVisible" title="编辑课程" width="min(520px, 94vw)">
+      <el-form label-position="top">
+        <el-form-item label="课程名称"><el-input v-model="courseForm.name" /></el-form-item>
+        <el-form-item label="简介"><el-input v-model="courseForm.description" type="textarea" /></el-form-item>
+        <el-form-item label="课程状态">
+          <el-select v-model="courseForm.status" style="width:100%">
+            <el-option label="进行中（ACTIVE）" value="ACTIVE" />
+            <el-option label="已归档（ARCHIVED）" value="ARCHIVED" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer><el-button @click="editVisible = false">取消</el-button><el-button type="primary" @click="saveCourseEdit">保存</el-button></template>
     </el-dialog>
-    <el-dialog v-model="joinVisible" title="加入课程" width="min(420px, 94vw)"><el-input v-model="joinCode" placeholder="请输入课程邀请码" @keyup.enter="joinCourse" /><template #footer><el-button @click="joinVisible = false">取消</el-button><el-button type="primary" @click="joinCourse">加入</el-button></template></el-dialog>
     <el-dialog v-model="resourceVisible" title="登记外部对象元数据" width="min(560px, 94vw)">
       <el-alert title="此操作只登记一个已存在的外部对象标识，不会上传文件，也不会验证对象是否存在。普通课程资料请使用“上传知识文档”。" type="warning" :closable="false" show-icon />
       <el-form label-position="top" class="dialog-form"><div class="form-grid"><el-form-item label="显示名称"><el-input v-model="resourceForm.name" /></el-form-item><el-form-item label="外部引用类型"><el-select v-model="resourceForm.resourceType"><el-option label="链接引用" value="LINK" /><el-option label="视频引用" value="VIDEO" /><el-option label="其他外部对象" value="OTHER" /></el-select></el-form-item></div><el-form-item label="外部对象标识（非上传地址）"><el-input v-model="resourceForm.objectKey" :placeholder="selected ? `courses/${selected.id}/external/...` : 'courses/{courseId}/external/...'" /></el-form-item><el-form-item label="说明"><el-input v-model="resourceForm.description" type="textarea" /></el-form-item><el-form-item label="章节"><el-select v-model="resourceForm.chapterId" clearable><el-option v-for="chapter in chapters" :key="chapter.id" :label="chapter.title" :value="chapter.id" /></el-select></el-form-item></el-form>
@@ -560,15 +604,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.course-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; margin-bottom: 20px; }
-.course-card { min-height: 180px; display: flex; flex-direction: column; align-items: flex-start; border: 1px solid var(--line); border-radius: 13px; padding: 19px; background: #fff; color: var(--ink); text-align: left; transition: transform .15s, border .15s, box-shadow .15s; }
-.course-card:hover, .course-card.active { transform: translateY(-2px); border-color: #8799ec; box-shadow: 0 10px 24px rgba(35,62,153,.1); }
-.course-card.active { box-shadow: inset 0 3px #3554dc, 0 10px 24px rgba(35,62,153,.08); }
-.course-card__code { color: var(--brand); font-size: 11px; font-weight: 800; letter-spacing: .08em; }
-.course-card strong { margin-top: 9px; font-size: 18px; }
-.course-card p { flex: 1; margin: 8px 0; color: var(--muted); line-height: 1.5; }
-.course-card__meta { color: #8b94a7; font-size: 11px; }
-.course-workspace { margin-top: 20px; overflow: hidden; }
+.course-workspace { margin-top: 4px; overflow: hidden; }
 .course-tabs { padding: 0 21px 21px; }
 .tab-toolbar { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .tab-toolbar p { color: var(--muted); }

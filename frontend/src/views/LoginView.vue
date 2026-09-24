@@ -45,11 +45,19 @@ const registerRules: FormRules = {
   ],
 }
 
+function roleHome(): string {
+  if (auth.isAdmin) return '/admin'
+  if (auth.canTeach) return '/teacher'
+  return '/student'
+}
+
 async function submitLogin() {
   if (!(await loginFormRef.value?.validate().catch(() => false))) return
   try {
     await auth.login(loginForm.identifier.trim(), loginForm.password)
-    const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/') ? route.query.redirect : '/courses'
+    const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
+      ? route.query.redirect
+      : roleHome()
     await router.replace(redirect)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '登录失败')

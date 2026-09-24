@@ -25,6 +25,12 @@ export interface CreateCourseInput {
   semesterId: string
 }
 
+export interface UpdateCourseInput {
+  name?: string
+  description?: string
+  status?: 'ACTIVE' | 'ARCHIVED'
+}
+
 export interface CreateSemesterInput {
   code: string
   name: string
@@ -61,6 +67,8 @@ export const courseApi = {
   list: (page = 0, size = 50) => apiRequest<PageResult<CourseSummary>>({ url: '/courses', params: { page, size } }),
   get: (courseId: string) => apiRequest<CourseDetails>({ url: `/courses/${courseId}` }),
   create: (input: CreateCourseInput) => apiRequest<CourseDetails>({ url: '/courses', method: 'POST', data: input }),
+  update: (courseId: string, input: UpdateCourseInput) =>
+    apiRequest<CourseDetails>({ url: `/courses/${courseId}`, method: 'PATCH', data: input }),
   join: (inviteCode: string) => apiRequest<CourseDetails>({ url: '/courses/join', method: 'POST', data: { inviteCode } }),
   semesters: () => apiRequest<Semester[]>({ url: '/semesters' }),
   createSemester: (input: CreateSemesterInput) =>

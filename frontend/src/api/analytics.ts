@@ -1,5 +1,5 @@
 import { apiRequest } from './client'
-import type { AnalyticsSnapshot, AsyncJob, CourseDashboard, PageResult, User } from '@/types/domain'
+import type { AnalyticsSnapshot, AsyncJob, CourseDashboard, PageResult } from '@/types/domain'
 
 interface DashboardResponse {
   courseId: string
@@ -85,14 +85,4 @@ export const analyticsApi = {
     }),
   snapshotTrends,
   job: (jobId: string) => apiRequest<AsyncJob>({ url: `/jobs/${jobId}` }),
-}
-
-export const adminApi = {
-  users: () => apiRequest<PageResult<User>>({ url: '/admin/users', params: { page: 0, size: 100 } }),
-  createUser: (input: { email: string; username: string; displayName: string; password: string; accountType: 'TEACHER' | 'STUDENT'; roles: Array<'ADMIN' | 'USER'> }) =>
-    apiRequest<User>({ url: '/admin/users', method: 'POST', data: input }),
-  setEnabled: (userId: string, enabled: boolean) =>
-    apiRequest<User>({ url: `/admin/users/${userId}`, method: 'PATCH', data: { enabled } }),
-  setRoles: (userId: string, roles: Array<'ADMIN' | 'USER'>) =>
-    apiRequest<User>({ url: `/admin/users/${userId}/roles`, method: 'PUT', data: { roles } }),
 }

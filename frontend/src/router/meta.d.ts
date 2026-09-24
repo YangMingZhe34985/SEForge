@@ -7,5 +7,6 @@ declare module 'vue-router' {
     requiresAuth: boolean
     title: string
     capability?: 'teacher' | 'course-staff' | 'admin'
+    workspace?: 'admin' | 'teacher' | 'student'
   }
 }

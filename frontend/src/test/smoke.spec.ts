@@ -10,14 +10,48 @@ describe('SEForge frontend smoke checks', () => {
     expect(wrapper.classes()).toContain('status-badge--pending-confirmation')
   })
 
-  it('keeps protected business pages lazy loaded and role gated', () => {
-    const shell = routes.find((route) => route.path === '/')
-    const children = shell?.children || []
-    const dashboard = children.find((route) => route.name === 'dashboard')
-    const admin = children.find((route) => route.name === 'admin-users')
-    expect(typeof dashboard?.component).toBe('function')
-    expect(dashboard?.meta?.capability).toBe('course-staff')
-    expect(admin?.meta?.capability).toBe('admin')
-    expect(children.every((route) => route.redirect || route.meta?.requiresAuth)).toBe(true)
+  it('keeps three role workspaces lazy loaded and role gated', () => {
+    const byPath = (path: string) => routes.find((route) => route.path === path)
+    const admin = byPath('/admin')
+    const teacher = byPath('/teacher')
+    const student = byPath('/student')
+
+    expect(admin?.meta?.workspace).toBe('admin')
+    expect(teacher?.meta?.workspace).toBe('teacher')
+    expect(student?.meta?.workspace).toBe('student')
+    for (const workspace of [admin, teacher, student]) {
+      expect(typeof workspace?.component).toBe('function')
+      expect(workspace?.meta?.requiresAuth).toBe(true)
+      expect(workspace?.children?.length).toBeGreaterThan(0)
+      expect(workspace?.children?.every((route) => route.meta?.requiresAuth)).toBe(true)
+    }
+
+    for (const name of ['admin-home', 'admin-users', 'admin-audit']) {
+      const route = admin?.children?.find((child) => child.name === name)
+      expect(typeof route?.component, name).toBe('function')
+      expect(route?.meta?.workspace).toBe('admin')
+    }
+
+    for (const prefix of ['teacher', 'student']) {
+      const workspace = prefix === 'teacher' ? teacher : student
+      const course = workspace?.children?.find((child) => child.name === `${prefix}-course`)
+      expect(course?.path).toBe('courses/:courseId')
+      for (const name of [`${prefix}-home`, `${prefix}-course`, `${prefix}-course-assistant`, `${prefix}-course-assignments`, `${prefix}-grades`]) {
+        const route = workspace?.children?.find((child) => child.name === name)
+        expect(typeof route?.component, name).toBe('function')
+      }
+      for (const name of [`${prefix}-course-reviews`, `${prefix}-course-dashboard`]) {
+        const route = workspace?.children?.find((child) => child.name === name)
+        expect(typeof route?.component, name).toBe('function')
+        expect(route?.meta?.capability, name).toBe('course-staff')
+      }
+    }
+  })
+
+  it('redirects legacy flat routes into the role workspaces', () => {
+    for (const path of ['/', '/courses', '/courses/:courseId', '/courses/:courseId/assistant', '/courses/:courseId/assignments', '/reviews', '/dashboard', '/grades']) {
+      const legacy = routes.find((route) => route.path === path)
+      expect(legacy?.redirect, path).toBeTruthy()
+    }
   })
 })

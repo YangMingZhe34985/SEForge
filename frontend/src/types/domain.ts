@@ -27,6 +27,21 @@ export interface User {
   enabled: boolean
 }
 
+export type AuditOutcome = 'SUCCEEDED' | 'FAILED' | 'REJECTED'
+
+export interface AuditLogEntry {
+  id: string
+  actorId: string | null
+  actorUsername: string | null
+  courseId: string | null
+  action: string
+  targetType: string | null
+  targetId: string | null
+  outcome: AuditOutcome
+  traceId: string
+  occurredAt: string
+}
+
 export interface Semester {
   id: string
   code: string
