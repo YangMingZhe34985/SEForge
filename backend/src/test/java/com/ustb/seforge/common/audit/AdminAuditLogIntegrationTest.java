@@ -46,7 +46,7 @@ class AdminAuditLogIntegrationTest {
                 "audit-admin@example.test", "audit-admin", PASSWORD, "审计管理员",
                 AccountType.TEACHER, Set.of(GlobalRole.USER, GlobalRole.ADMIN)));
         UserView student = identityService.registerStudent(new RegisterRequest(
-                "audit-student@example.test", "audit-student", PASSWORD, "审计学生"));
+                "audit-student@example.test", "audit-student", PASSWORD, "审计学生", "2026-AUDIT"));
         auditService.record(admin.id(), null, "ADMIN_USER_CREATE", "USER", student.id(),
                 AuditService.SUCCEEDED);
         auditService.record(null, null, "AUTH_LOGIN", "USER", student.id(), AuditService.REJECTED);
@@ -88,8 +88,9 @@ class AdminAuditLogIntegrationTest {
                         .header("X-XSRF-TOKEN", token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"identifier":"%s","password":"%s"}
-                                """.formatted(username, PASSWORD)))
+                                {"identifier":"%s","password":"%s","portal":"%s"}
+                                """.formatted(username.equals("audit-student") ? "2026-AUDIT" : username,
+                                        PASSWORD, username.equals("audit-student") ? "STUDENT" : "ADMIN")))
                 .andExpect(status().isOk())
                 .andReturn();
         return (MockHttpSession) result.getRequest().getSession(false);

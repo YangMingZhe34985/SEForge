@@ -69,4 +69,5 @@ public class CourseResource extends BaseEntity {
     public String getContentType() { return contentType; }
     public Long getSizeBytes() { return sizeBytes; }
     public ResourceStatus getStatus() { return status; }
+    public void remove() { status = ResourceStatus.DELETED; }
 }

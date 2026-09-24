@@ -22,6 +22,9 @@ public class CourseClass extends BaseEntity {
     @Column(name = "is_primary", nullable = false)
     private boolean primaryClass;
 
+    @Column(nullable = false)
+    private boolean active = true;
+
     protected CourseClass() {
     }
 
@@ -38,4 +41,14 @@ public class CourseClass extends BaseEntity {
     public String getName() { return name; }
     public Integer getCapacity() { return capacity; }
     public boolean isPrimaryClass() { return primaryClass; }
+    public boolean isActive() { return active; }
+
+    public void update(String name, Integer capacity, boolean primaryClass) {
+        this.name = name.trim();
+        this.capacity = capacity;
+        this.primaryClass = primaryClass;
+    }
+
+    public void close() { this.active = false; }
+    public void reopen() { this.active = true; }
 }

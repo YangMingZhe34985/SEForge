@@ -62,7 +62,6 @@ class CourseServiceTest {
 
     @Test
     void studentAccountCannotCreateCourse() {
-        when(accessService.isAdmin(9L)).thenReturn(false);
         when(identityService.isTeacher(9L)).thenReturn(false);
 
         assertThatThrownBy(() -> service.createCourse(

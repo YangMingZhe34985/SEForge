@@ -48,6 +48,13 @@ describe('SEForge frontend smoke checks', () => {
     }
   })
 
+  it('exposes separate normal and admin login entries plus the student profile', () => {
+    expect(routes.find((route) => route.path === '/login')?.name).toBe('login')
+    expect(routes.find((route) => route.path === '/login/admin')?.name).toBe('admin-login')
+    const student = routes.find((route) => route.path === '/student')
+    expect(student?.children?.find((route) => route.name === 'student-profile')?.path).toBe('profile')
+  })
+
   it('redirects legacy flat routes into the role workspaces', () => {
     for (const path of ['/', '/courses', '/courses/:courseId', '/courses/:courseId/assistant', '/courses/:courseId/assignments', '/reviews', '/dashboard', '/grades']) {
       const legacy = routes.find((route) => route.path === path)

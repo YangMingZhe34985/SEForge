@@ -7,6 +7,8 @@ import com.ustb.seforge.course.domain.CourseMemberRole;
 import com.ustb.seforge.course.domain.CourseMemberStatus;
 import com.ustb.seforge.course.repository.CourseMemberRepository;
 import com.ustb.seforge.identity.repository.UserRoleRepository;
+import com.ustb.seforge.identity.repository.UserProfileRepository;
+import com.ustb.seforge.identity.domain.AccountType;
 import com.ustb.seforge.identity.security.UserPrincipal;
 import java.util.EnumSet;
 import java.util.Optional;
@@ -18,11 +20,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class CourseAccessService {
     private final CourseMemberRepository memberRepository;
     private final UserRoleRepository userRoleRepository;
+    private final UserProfileRepository profileRepository;
 
     public CourseAccessService(
-            CourseMemberRepository memberRepository, UserRoleRepository userRoleRepository) {
+            CourseMemberRepository memberRepository, UserRoleRepository userRoleRepository,
+            UserProfileRepository profileRepository) {
         this.memberRepository = memberRepository;
         this.userRoleRepository = userRoleRepository;
+        this.profileRepository = profileRepository;
     }
 
     @Transactional(readOnly = true)
@@ -34,16 +39,20 @@ public class CourseAccessService {
 
     @Transactional(readOnly = true)
     public void requireTeachingStaff(Long courseId, Long userId) {
-        if (isAdmin(userId)) return;
-        boolean allowed = memberRepository.existsByCourseIdAndUserIdAndRoleInAndStatus(
+        if (!isTeachingStaff(courseId, userId)) throw accessDenied();
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isTeachingStaff(Long courseId, Long userId) {
+        return userId != null && (!isAdmin(userId) || isTeacherAccount(userId))
+                && memberRepository.existsByCourseIdAndUserIdAndRoleInAndStatus(
                 courseId, userId, EnumSet.of(CourseMemberRole.TEACHER, CourseMemberRole.TA),
                 CourseMemberStatus.ACTIVE);
-        if (!allowed) throw accessDenied();
     }
 
     @Transactional(readOnly = true)
     public void requireTeacherOrAdmin(Long courseId, Long userId) {
-        if (isAdmin(userId)) return;
+        requireAdminTeachingQualification(userId);
         boolean allowed = memberRepository.existsByCourseIdAndUserIdAndRoleInAndStatus(
                 courseId, userId, EnumSet.of(CourseMemberRole.TEACHER), CourseMemberStatus.ACTIVE);
         if (!allowed) throw accessDenied();
@@ -71,10 +80,19 @@ public class CourseAccessService {
     @Transactional(readOnly = true)
     public boolean canManage(Long courseId, Authentication authentication) {
         Long userId = principalId(authentication);
-        return userId != null && (isAdmin(userId)
-                || memberRepository.existsByCourseIdAndUserIdAndRoleInAndStatus(
+        return userId != null && (!isAdmin(userId) || isTeacherAccount(userId))
+                && memberRepository.existsByCourseIdAndUserIdAndRoleInAndStatus(
                         courseId, userId, EnumSet.of(CourseMemberRole.TEACHER, CourseMemberRole.TA),
-                        CourseMemberStatus.ACTIVE));
+                        CourseMemberStatus.ACTIVE);
+    }
+
+    private void requireAdminTeachingQualification(Long userId) {
+        if (isAdmin(userId) && !isTeacherAccount(userId)) throw accessDenied();
+    }
+
+    private boolean isTeacherAccount(Long userId) {
+        return profileRepository.findByUserId(userId)
+                .map(profile -> profile.getAccountType() == AccountType.TEACHER).orElse(false);
     }
 
     private Long principalId(Authentication authentication) {

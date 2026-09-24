@@ -8,7 +8,6 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import { assignmentApi } from '@/api/assignments'
 import { ApiError } from '@/api/client'
 import { courseApi } from '@/api/courses'
-import { useAuthStore } from '@/stores/auth'
 import { useCourseStore } from '@/stores/courses'
 import type {
   AssignmentDetails,
@@ -29,7 +28,6 @@ import type {
 type AnswerValue = SubmissionAnswerInput['answer']
 
 const route = useRoute()
-const auth = useAuthStore()
 const courseStore = useCourseStore()
 const courseId = computed(() => String(route.params.courseId))
 const assignments = ref<AssignmentSummary[]>([])
@@ -79,8 +77,8 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null
 let courseGeneration = 0
 let assignmentGeneration = 0
 
-const canTeachCourse = computed(() => auth.isAdmin || ['TEACHER', 'TA'].includes(courseStore.selectedCourse?.role || ''))
-const canPublish = computed(() => auth.isAdmin || courseStore.selectedCourse?.role === 'TEACHER')
+const canTeachCourse = computed(() => ['TEACHER', 'TA'].includes(courseStore.selectedCourse?.role || ''))
+const canPublish = computed(() => courseStore.selectedCourse?.role === 'TEACHER')
 const canEdit = computed(() => !canTeachCourse.value && detail.value?.status === 'PUBLISHED')
 const isDraft = computed(() => detail.value?.status === 'DRAFT')
 

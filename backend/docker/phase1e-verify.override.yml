@@ -1,0 +1,8 @@
+services:
+  api:
+    volumes:
+      - app-data:/app/data
+      - ../target/seforge-backend.jar:/app/app.jar:ro
+  frontend:
+    volumes:
+      - ../../frontend/dist:/usr/share/nginx/html:ro

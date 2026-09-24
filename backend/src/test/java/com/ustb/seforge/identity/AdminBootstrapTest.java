@@ -36,7 +36,7 @@ class AdminBootstrapTest {
         verify(identityService).createUser(captor.capture());
         CreateUserRequest request = captor.getValue();
         org.junit.jupiter.api.Assertions.assertEquals("admin@admin.com", request.email());
-        org.junit.jupiter.api.Assertions.assertEquals(AccountType.TEACHER, request.accountType());
+        org.junit.jupiter.api.Assertions.assertEquals(AccountType.PLATFORM, request.accountType());
         org.junit.jupiter.api.Assertions.assertEquals(Set.of(GlobalRole.ADMIN, GlobalRole.USER), request.roles());
     }
 

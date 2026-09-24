@@ -8,13 +8,12 @@ import {
   Histogram,
   HomeFilled,
   Reading,
+  User,
 } from '@element-plus/icons-vue'
 import WorkspaceShell from './WorkspaceShell.vue'
 import type { WorkspaceNavItem } from './navigation'
-import { useAuthStore } from '@/stores/auth'
 import { useCourseStore } from '@/stores/courses'
 
-const auth = useAuthStore()
 const courseStore = useCourseStore()
 
 const navigation = computed<WorkspaceNavItem[]>(() => {
@@ -23,9 +22,10 @@ const navigation = computed<WorkspaceNavItem[]>(() => {
     courseId ? { name: `student-course${suffix}`, params: { courseId } } : { name: 'student-home' }
   // Teaching assistants keep their review/dashboard entries inside the student workspace;
   // the server remains the authority for what they may actually do.
-  const isCourseStaff = auth.isAdmin || courseStore.canManageSelected
+  const isCourseStaff = courseStore.canManageSelected
   return [
     { label: '我的课程', icon: HomeFilled, to: { name: 'student-home' } },
+    { label: '个人资料', icon: User, to: { name: 'student-profile' } },
     { label: '课程内容', icon: Collection, to: courseRoute(''), enabled: Boolean(courseId) },
     { label: '课程助手', icon: ChatDotRound, to: courseRoute('-assistant'), enabled: Boolean(courseId) },
     { label: '作业与 Tutor', icon: Reading, to: courseRoute('-assignments'), enabled: Boolean(courseId) },

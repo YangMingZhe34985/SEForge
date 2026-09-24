@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CourseAnnouncementRepository extends JpaRepository<CourseAnnouncement, Long> {
+    java.util.Optional<CourseAnnouncement> findByIdAndCourseId(Long id, Long courseId);
     Page<CourseAnnouncement> findAllByCourseIdAndPublishedAtIsNotNullOrderByPublishedAtDesc(
             Long courseId, Pageable pageable);
 }

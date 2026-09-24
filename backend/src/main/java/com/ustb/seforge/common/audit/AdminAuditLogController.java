@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import java.time.Instant;
 
 /**
  * Read side of the platform audit trail. Guarded by the /api/v1/admin/** ADMIN rule
@@ -23,7 +24,12 @@ public class AdminAuditLogController {
     @GetMapping
     public ApiEnvelope<PageResponse<AuditLogView>> list(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return ApiEnvelope.success(queryService.list(page, size));
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String action,
+            @RequestParam(required = false) String outcome,
+            @RequestParam(required = false) Long actorId,
+            @RequestParam(required = false) Instant from,
+            @RequestParam(required = false) Instant to) {
+        return ApiEnvelope.success(queryService.list(page, size, action, outcome, actorId, from, to));
     }
 }

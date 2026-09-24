@@ -1,5 +1,5 @@
 export type PlatformRole = 'ADMIN' | 'USER'
-export type AccountType = 'STUDENT' | 'TEACHER'
+export type AccountType = 'STUDENT' | 'TEACHER' | 'PLATFORM'
 export type CourseRole = 'TEACHER' | 'TA' | 'STUDENT'
 export type SemesterStatus = 'PLANNED' | 'ACTIVE' | 'CLOSED'
 
@@ -23,6 +23,7 @@ export interface User {
   username: string
   displayName: string
   accountType: AccountType
+  studentNo: string | null
   roles: string[]
   enabled: boolean
 }
@@ -58,6 +59,7 @@ export interface CourseSummary {
   description?: string
   semesterId?: string
   semesterName?: string
+  ownerId: string
   status: 'ACTIVE' | 'ARCHIVED'
   role: CourseRole | null
   memberCount: number
@@ -76,6 +78,7 @@ export interface CourseClass {
   name: string
   capacity: number | null
   primaryClass: boolean
+  active: boolean
 }
 
 export interface CourseInvite {

@@ -10,4 +10,5 @@ public interface CourseResourceRepository extends JpaRepository<CourseResource, 
     List<CourseResource> findAllByCourseIdAndStatusOrderByCreatedAtDesc(Long courseId, ResourceStatus status);
     Optional<CourseResource> findByIdAndCourseIdAndStatus(Long id, Long courseId, ResourceStatus status);
     boolean existsByObjectKey(String objectKey);
+    boolean existsByChapterIdAndStatus(Long chapterId, ResourceStatus status);
 }

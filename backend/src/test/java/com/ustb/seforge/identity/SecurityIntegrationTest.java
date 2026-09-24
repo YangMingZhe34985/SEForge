@@ -140,12 +140,55 @@ class SecurityIntegrationTest {
                         .cookie(new Cookie("XSRF-TOKEN", csrfToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"email":"cors-allowed@example.test","username":"cors-allowed","password":"cors-allowed-pass","displayName":"Allowed"}
+                                {"email":"cors-allowed@example.test","username":"cors-allowed","password":"cors-allowed-pass","displayName":"Allowed","studentNo":"2026-CORS"}
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
                 .andExpect(jsonPath("$.data.username").value("cors-allowed"))
+                .andExpect(jsonPath("$.data.studentNo").value("2026-CORS"))
                 .andExpect(jsonPath("$.data.roles[0]").value("USER"));
+    }
+
+    @Test
+    void studentNumberIsUniqueAndPortalIntentCannotGrantTeacherOrAdminAccess() throws Exception {
+        jdbcTemplate.update("""
+                merge into roles (code, name, version, created_at, updated_at)
+                key (code) values ('USER', 'User', 0, current_timestamp, current_timestamp)
+                """);
+        mockMvc.perform(post("/api/v1/auth/register").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"number-one@example.test","username":"number-one","studentNo":"2026-1001", "password":"number-one-pass","displayName":"Student One"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.studentNo").value("2026-1001"));
+        mockMvc.perform(post("/api/v1/auth/register").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"number-two@example.test","username":"number-two","studentNo":"2026-1001", "password":"number-two-pass","displayName":"Student Two"}
+                                """))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/v1/auth/login").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"identifier":"2026-1001","password":"number-one-pass","portal":"STUDENT"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.user.studentNo").value("2026-1001"));
+        for (String portal : new String[]{"TEACHER", "ADMIN"}) {
+            mockMvc.perform(post("/api/v1/auth/login").with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"identifier":"number-one","password":"number-one-pass","portal":"%s"}
+                                    """.formatted(portal)))
+                    .andExpect(status().isUnauthorized());
+        }
+        mockMvc.perform(post("/api/v1/auth/login").with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"identifier":"number-one@example.test","password":"number-one-pass","portal":"STUDENT"}
+                                """))
+                .andExpect(status().isUnauthorized());
     }
 
     /**

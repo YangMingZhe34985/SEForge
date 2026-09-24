@@ -43,4 +43,11 @@ public class Semester extends BaseEntity {
     public LocalDate getStartsOn() { return startsOn; }
     public LocalDate getEndsOn() { return endsOn; }
     public SemesterStatus getStatus() { return status; }
+
+    public void update(String name, LocalDate startsOn, LocalDate endsOn, SemesterStatus status) {
+        this.name = name.trim();
+        this.startsOn = startsOn;
+        this.endsOn = endsOn;
+        this.status = status;
+    }
 }

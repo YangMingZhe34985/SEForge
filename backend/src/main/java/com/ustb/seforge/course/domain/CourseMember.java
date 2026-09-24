@@ -49,6 +49,10 @@ public class CourseMember extends BaseEntity {
     public Instant getJoinedAt() { return joinedAt; }
 
     public void remove() { this.status = CourseMemberStatus.REMOVED; }
+    public void update(Long classId, CourseMemberRole role) {
+        this.classId = classId;
+        this.role = role;
+    }
     public void reactivate(Long classId, CourseMemberRole role) {
         this.classId = classId;
         this.role = role;

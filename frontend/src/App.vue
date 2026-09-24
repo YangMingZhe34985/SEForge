@@ -7,8 +7,11 @@ const router = useRouter()
 const auth = useAuthStore()
 
 const handleUnauthorized = () => {
+  const current = router.currentRoute.value
+  if (!auth.isAuthenticated && !current.meta.requiresAuth) return
+  const loginRoute = current.meta.workspace === 'admin' || current.name === 'admin-login' ? 'admin-login' : 'login'
   auth.clearSession()
-  void router.replace({ name: 'login', query: { expired: '1' } })
+  void router.replace({ name: loginRoute, query: { expired: '1' } })
 }
 
 onMounted(() => window.addEventListener('seforge:unauthorized', handleUnauthorized))

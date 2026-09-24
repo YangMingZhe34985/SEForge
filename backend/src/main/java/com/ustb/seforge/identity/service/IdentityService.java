@@ -4,6 +4,7 @@ import com.ustb.seforge.common.api.PageResponse;
 import com.ustb.seforge.common.exception.AppException;
 import com.ustb.seforge.common.exception.ErrorCode;
 import com.ustb.seforge.identity.api.CreateUserRequest;
+import com.ustb.seforge.identity.api.ClaimStudentNoRequest;
 import com.ustb.seforge.identity.api.RegisterRequest;
 import com.ustb.seforge.identity.api.UserView;
 import com.ustb.seforge.identity.domain.AccountType;
@@ -56,7 +57,7 @@ public class IdentityService {
     public UserView registerStudent(RegisterRequest request) {
         return createUser(new CreateUserRequest(
                 request.email(), request.username(), request.password(), request.displayName(),
-                AccountType.STUDENT, Set.of(GlobalRole.USER)));
+                AccountType.STUDENT, Set.of(GlobalRole.USER), request.studentNo()));
     }
 
     @Transactional
@@ -65,9 +66,20 @@ public class IdentityService {
         String username = request.username().trim().toLowerCase();
         ensureUnique(email, username);
 
+        String studentNo = normalizeStudentNo(request.studentNo());
+        if (request.accountType() == AccountType.STUDENT) {
+            if (studentNo == null) {
+                throw new AppException(ErrorCode.VALIDATION_FAILED, "Student number is required");
+            }
+            ensureStudentNoUnique(studentNo);
+        } else if (studentNo != null) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, "Student number is only for student accounts");
+        }
+
         User user = userRepository.save(new User(email, username, passwordEncoder.encode(request.password())));
-        UserProfile profile = profileRepository.save(
-                new UserProfile(user.getId(), request.displayName().trim(), request.accountType()));
+        UserProfile profile = new UserProfile(user.getId(), request.displayName().trim(), request.accountType());
+        profile.setStudentNo(studentNo);
+        profile = profileRepository.save(profile);
 
         Set<GlobalRole> requestedRoles = request.roles() == null || request.roles().isEmpty()
                 ? EnumSet.of(GlobalRole.USER)
@@ -90,7 +102,14 @@ public class IdentityService {
 
     @Transactional(readOnly = true)
     public PageResponse<UserView> listUsers(int page, int size) {
-        Page<User> users = userRepository.findAll(PageRequest.of(
+        return listUsers(page, size, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<UserView> listUsers(int page, int size, AccountType accountType, String search) {
+        String pattern = search == null || search.isBlank() ? null
+                : "%" + search.trim().toLowerCase(java.util.Locale.ROOT) + "%";
+        Page<User> users = userRepository.search(accountType, pattern, PageRequest.of(
                 Math.max(page, 0), Math.min(Math.max(size, 1), 100), Sort.by(Sort.Direction.DESC, "createdAt")));
         List<Long> userIds = users.stream().map(User::getId).toList();
         Map<Long, UserProfile> profiles = new HashMap<>();
@@ -99,6 +118,25 @@ public class IdentityService {
                 .map(user -> toView(user, profiles.get(user.getId()), userRoleRepository.findRoleCodesByUserId(user.getId())))
                 .toList();
         return new PageResponse<>(views, users.getNumber(), users.getSize(), users.getTotalElements());
+    }
+
+    @Transactional
+    public UserView updateProfile(Long targetUserId, com.ustb.seforge.identity.api.UpdateUserProfileRequest request) {
+        User user = requireUser(targetUserId);
+        UserProfile profile = requireProfile(targetUserId);
+        profile.setDisplayName(request.displayName().trim());
+        if (request.studentNo() != null) {
+            if (profile.getAccountType() != AccountType.STUDENT) {
+                throw new AppException(ErrorCode.VALIDATION_FAILED, "Student number is only for student accounts");
+            }
+            String studentNo = normalizeStudentNo(request.studentNo());
+            if (!studentNo.equals(profile.getStudentNo())) {
+                ensureStudentNoUnique(studentNo);
+                profile.setStudentNo(studentNo);
+                profileRepository.saveAndFlush(profile);
+            }
+        }
+        return toView(user, profile, userRoleRepository.findRoleCodesByUserId(targetUserId));
     }
 
     @Transactional
@@ -148,6 +186,28 @@ public class IdentityService {
                 .isPresent();
     }
 
+    @Transactional
+    public UserView claimStudentNo(ClaimStudentNoRequest request) {
+        String identifier = request.identifier().trim();
+        User user = userRepository.findByUsernameIgnoreCaseOrEmailIgnoreCase(identifier, identifier)
+                .orElseThrow(() -> new AppException(ErrorCode.INVALID_CREDENTIALS, "Invalid credentials"));
+        if (!user.isEnabled() || user.isLocked() || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            throw new AppException(ErrorCode.INVALID_CREDENTIALS, "Invalid credentials");
+        }
+        UserProfile profile = requireProfile(user.getId());
+        if (profile.getAccountType() != AccountType.STUDENT || profile.getStudentNo() != null) {
+            throw new AppException(ErrorCode.CONFLICT, "Student number claim is not available for this account");
+        }
+        String studentNo = normalizeStudentNo(request.studentNo());
+        if (studentNo == null) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, "Student number is required");
+        }
+        ensureStudentNoUnique(studentNo);
+        profile.setStudentNo(studentNo);
+        profileRepository.saveAndFlush(profile);
+        return toView(user, profile, userRoleRepository.findRoleCodesByUserId(user.getId()));
+    }
+
     @Transactional(readOnly = true)
     public Map<Long, String> displayNames(Collection<Long> userIds) {
         if (userIds.isEmpty()) {
@@ -168,6 +228,21 @@ public class IdentityService {
         }
     }
 
+    private void ensureStudentNoUnique(String studentNo) {
+        if (profileRepository.existsByStudentNoIgnoreCase(studentNo)) {
+            throw new AppException(ErrorCode.CONFLICT, "Student number is already registered");
+        }
+    }
+
+    private String normalizeStudentNo(String studentNo) {
+        if (studentNo == null || studentNo.isBlank()) return null;
+        String normalized = studentNo.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!normalized.matches("[A-Z0-9_-]{3,64}")) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, "Student number format is invalid");
+        }
+        return normalized;
+    }
+
     private User requireUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND, "User not found"));
@@ -184,6 +259,6 @@ public class IdentityService {
         }
         return new UserView(
                 user.getId(), user.getEmail(), user.getUsername(), profile.getDisplayName(), profile.getAccountType(),
-                new LinkedHashSet<>(roleCodes), user.isEnabled());
+                profile.getStudentNo(), new LinkedHashSet<>(roleCodes), user.isEnabled());
     }
 }

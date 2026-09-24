@@ -5,24 +5,22 @@ import { ElMessage } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { adminApi } from '@/api/admin'
-import { courseApi } from '@/api/courses'
+import type { Semester } from '@/types/domain'
 import type { AuditLogEntry } from '@/types/domain'
 
 const router = useRouter()
 const loading = ref(false)
-const stats = ref({ users: 0, courses: 0, semesters: 0 })
+const stats = ref({ teachers: 0, students: 0, activeCourses: 0, archivedCourses: 0, currentSemester: null as Semester | null })
 const recentAudit = ref<AuditLogEntry[]>([])
 
 async function load() {
   loading.value = true
   try {
-    const [users, courses, semesters, audit] = await Promise.all([
-      adminApi.users(),
-      courseApi.list(0, 100),
-      courseApi.semesters(),
+    const [overview, audit] = await Promise.all([
+      adminApi.overview(),
       adminApi.auditLogs(0, 8),
     ])
-    stats.value = { users: users.total, courses: courses.total, semesters: semesters.length }
+    stats.value = overview
     recentAudit.value = audit.items
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '管理概览加载失败')
@@ -59,9 +57,11 @@ onMounted(load)
     </PageHeader>
 
     <div class="stat-grid">
-      <article><span>平台用户</span><strong>{{ stats.users }}</strong></article>
-      <article><span>课程</span><strong>{{ stats.courses }}</strong></article>
-      <article><span>学期</span><strong>{{ stats.semesters }}</strong></article>
+      <article><span>教师</span><strong>{{ stats.teachers }}</strong></article>
+      <article><span>学生</span><strong>{{ stats.students }}</strong></article>
+      <article><span>活跃课程</span><strong>{{ stats.activeCourses }}</strong></article>
+      <article><span>归档课程</span><strong>{{ stats.archivedCourses }}</strong></article>
+      <article><span>当前学期</span><strong>{{ stats.currentSemester?.name || '未设置' }}</strong></article>
     </div>
 
     <section class="panel" v-loading="loading">
@@ -81,7 +81,7 @@ onMounted(load)
 </template>
 
 <style scoped>
-.stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 14px; margin-bottom: 18px; }
 .stat-grid article { display: grid; gap: 7px; border: 1px solid var(--line); border-radius: 12px; padding: 18px; background: #fff; }
 .stat-grid span { color: var(--muted); font-size: 11px; }
 .stat-grid strong { font-size: 25px; }

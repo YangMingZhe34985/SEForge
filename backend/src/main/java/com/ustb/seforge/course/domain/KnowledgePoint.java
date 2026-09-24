@@ -39,4 +39,11 @@ public class KnowledgePoint extends BaseEntity {
     public String getTitle() { return title; }
     public String getDescription() { return description; }
     public int getSortOrder() { return sortOrder; }
+
+    public void update(Long chapterId, String title, String description, int sortOrder) {
+        this.chapterId = chapterId;
+        this.title = title.trim();
+        this.description = description;
+        this.sortOrder = sortOrder;
+    }
 }

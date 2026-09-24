@@ -64,7 +64,8 @@ export interface CreateResourceInput {
 }
 
 export const courseApi = {
-  list: (page = 0, size = 50) => apiRequest<PageResult<CourseSummary>>({ url: '/courses', params: { page, size } }),
+  list: (page = 0, size = 50, filters?: { search?: string; status?: 'ACTIVE' | 'ARCHIVED'; semesterId?: string }) =>
+    apiRequest<PageResult<CourseSummary>>({ url: '/courses', params: { page, size, ...filters } }),
   get: (courseId: string) => apiRequest<CourseDetails>({ url: `/courses/${courseId}` }),
   create: (input: CreateCourseInput) => apiRequest<CourseDetails>({ url: '/courses', method: 'POST', data: input }),
   update: (courseId: string, input: UpdateCourseInput) =>
@@ -73,15 +74,23 @@ export const courseApi = {
   semesters: () => apiRequest<Semester[]>({ url: '/semesters' }),
   createSemester: (input: CreateSemesterInput) =>
     apiRequest<Semester>({ url: '/admin/semesters', method: 'POST', data: input }),
+  updateSemester: (semesterId: string, input: Omit<CreateSemesterInput, 'code'>) =>
+    apiRequest<Semester>({ url: `/admin/semesters/${semesterId}`, method: 'PUT', data: input }),
   classes: (courseId: string) => apiRequest<CourseClass[]>({ url: `/courses/${courseId}/classes` }),
   createClass: (courseId: string, input: CreateCourseClassInput) =>
     apiRequest<CourseClass>({ url: `/courses/${courseId}/classes`, method: 'POST', data: input }),
+  updateClass: (courseId: string, classId: string, input: Omit<CourseClass, 'id' | 'code'>) =>
+    apiRequest<CourseClass>({ url: `/courses/${courseId}/classes/${classId}`, method: 'PUT', data: input }),
   invites: (courseId: string) => apiRequest<CourseInvite[]>({ url: `/courses/${courseId}/invites` }),
   createInvite: (courseId: string, input: CreateInviteInput) =>
     apiRequest<CourseInvite>({ url: `/courses/${courseId}/invites`, method: 'POST', data: input }),
+  revokeInvite: (courseId: string, inviteId: string) =>
+    apiRequest<CourseInvite>({ url: `/courses/${courseId}/invites/${inviteId}`, method: 'DELETE' }),
   members: (courseId: string) => apiRequest<CourseMember[]>({ url: `/courses/${courseId}/members` }),
   removeMember: (courseId: string, userId: string) =>
     apiRequest<void>({ url: `/courses/${courseId}/members/${userId}`, method: 'DELETE' }),
+  updateMember: (courseId: string, userId: string, input: { classId: string | null; role: 'STUDENT' | 'TA' }) =>
+    apiRequest<CourseMember>({ url: `/courses/${courseId}/members/${userId}`, method: 'PUT', data: input }),
   announcements: (courseId: string, page = 0, size = 20) =>
     apiRequest<PageResult<CourseAnnouncement>>({
       url: `/courses/${courseId}/announcements`,
@@ -89,9 +98,32 @@ export const courseApi = {
     }),
   createAnnouncement: (courseId: string, input: { title: string; content: string }) =>
     apiRequest<CourseAnnouncement>({ url: `/courses/${courseId}/announcements`, method: 'POST', data: input }),
+  updateAnnouncement: (courseId: string, announcementId: string, input: { title: string; content: string }) =>
+    apiRequest<CourseAnnouncement>({ url: `/courses/${courseId}/announcements/${announcementId}`, method: 'PUT', data: input }),
+  withdrawAnnouncement: (courseId: string, announcementId: string) =>
+    apiRequest<void>({ url: `/courses/${courseId}/announcements/${announcementId}`, method: 'DELETE' }),
   resources: (courseId: string) => apiRequest<CourseResource[]>({ url: `/courses/${courseId}/resources` }),
   createResource: (courseId: string, input: CreateResourceInput) =>
     apiRequest<CourseResource>({ url: `/courses/${courseId}/resources`, method: 'POST', data: input }),
+  uploadResource: (courseId: string, file: File, chapterId?: string) => {
+    const data = new FormData()
+    data.append('file', file)
+    if (chapterId) data.append('chapterId', chapterId)
+    return apiRequest<CourseResource>({ url: `/courses/${courseId}/resources/upload`, method: 'POST', data })
+  },
+  deleteResource: (courseId: string, resourceId: string) =>
+    apiRequest<void>({ url: `/courses/${courseId}/resources/${resourceId}`, method: 'DELETE' }),
+  async downloadResource(courseId: string, resource: CourseResource): Promise<void> {
+    const response = await fetch(apiUrl(`/courses/${courseId}/resources/${resource.id}/download`), { credentials: 'include' })
+    if (response.status === 401) window.dispatchEvent(new CustomEvent('seforge:unauthorized'))
+    if (!response.ok) throw new Error(`下载失败 (${response.status})`)
+    const objectUrl = URL.createObjectURL(await response.blob())
+    const anchor = window.document.createElement('a')
+    anchor.href = objectUrl
+    anchor.download = resource.name
+    anchor.click()
+    URL.revokeObjectURL(objectUrl)
+  },
   documents: (courseId: string) =>
     apiRequest<KnowledgeDocument[]>({ url: `/courses/${courseId}/knowledge/documents` }),
   uploadDocument: (courseId: string, file: File, chapterId?: string) => {
@@ -127,7 +159,15 @@ export const courseApi = {
   chapters: (courseId: string) => apiRequest<CourseChapter[]>({ url: `/courses/${courseId}/chapters` }),
   createChapter: (courseId: string, input: Pick<CourseChapter, 'title' | 'description' | 'sortOrder' | 'parentId'>) =>
     apiRequest<CourseChapter>({ url: `/courses/${courseId}/chapters`, method: 'POST', data: input }),
+  updateChapter: (courseId: string, chapterId: string, input: Pick<CourseChapter, 'title' | 'description' | 'sortOrder' | 'parentId'>) =>
+    apiRequest<CourseChapter>({ url: `/courses/${courseId}/chapters/${chapterId}`, method: 'PUT', data: input }),
+  deleteChapter: (courseId: string, chapterId: string) =>
+    apiRequest<void>({ url: `/courses/${courseId}/chapters/${chapterId}`, method: 'DELETE' }),
   knowledgePoints: (courseId: string) => apiRequest<KnowledgePoint[]>({ url: `/courses/${courseId}/knowledge-points` }),
   createKnowledgePoint: (courseId: string, input: Pick<KnowledgePoint, 'title' | 'description' | 'chapterId' | 'sortOrder'>) =>
     apiRequest<KnowledgePoint>({ url: `/courses/${courseId}/knowledge-points`, method: 'POST', data: input }),
+  updateKnowledgePoint: (courseId: string, pointId: string, input: Pick<KnowledgePoint, 'title' | 'description' | 'chapterId' | 'sortOrder'>) =>
+    apiRequest<KnowledgePoint>({ url: `/courses/${courseId}/knowledge-points/${pointId}`, method: 'PUT', data: input }),
+  deleteKnowledgePoint: (courseId: string, pointId: string) =>
+    apiRequest<void>({ url: `/courses/${courseId}/knowledge-points/${pointId}`, method: 'DELETE' }),
 }

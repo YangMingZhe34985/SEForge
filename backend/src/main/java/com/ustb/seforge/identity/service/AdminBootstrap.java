@@ -56,7 +56,7 @@ public class AdminBootstrap implements ApplicationRunner {
         }
         try {
             identityService.createUser(new CreateUserRequest(
-                    email, username, password, displayName, AccountType.TEACHER,
+                    email, username, password, displayName, AccountType.PLATFORM,
                     Set.of(GlobalRole.ADMIN, GlobalRole.USER)));
             log.info("Created the initial SEForge administrator account");
         } catch (RuntimeException failure) {

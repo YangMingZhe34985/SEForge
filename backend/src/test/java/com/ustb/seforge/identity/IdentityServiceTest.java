@@ -54,11 +54,12 @@ class IdentityServiceTest {
         when(roleRepository.findByCode("USER")).thenReturn(Optional.of(userRole));
 
         UserView result = service.registerStudent(new RegisterRequest(
-                "  Learner@Example.COM ", " Learner.One ", "a-secure-password", "Learner One"));
+                "  Learner@Example.COM ", " Learner.One ", "a-secure-password", "Learner One", " 2026_A01 "));
 
         assertThat(result.email()).isEqualTo("learner@example.com");
         assertThat(result.username()).isEqualTo("learner.one");
         assertThat(result.accountType()).isEqualTo(AccountType.STUDENT);
+        assertThat(result.studentNo()).isEqualTo("2026_A01");
         assertThat(result.roles()).containsExactly("USER");
         verify(passwordEncoder).encode("a-secure-password");
     }
@@ -68,7 +69,7 @@ class IdentityServiceTest {
         when(userRepository.existsByEmailIgnoreCase("learner@example.com")).thenReturn(true);
 
         assertThatThrownBy(() -> service.registerStudent(new RegisterRequest(
-                "learner@example.com", "learner", "a-secure-password", "Learner")))
+                "learner@example.com", "learner", "a-secure-password", "Learner", "2026_A02")))
                 .isInstanceOfSatisfying(AppException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.EMAIL_ALREADY_EXISTS));
     }

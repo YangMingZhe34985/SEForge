@@ -7,6 +7,7 @@ import com.ustb.seforge.common.exception.ErrorCode;
 import com.ustb.seforge.identity.security.UserPrincipal;
 import com.ustb.seforge.identity.service.IdentityService;
 import com.ustb.seforge.identity.service.LoginAttemptService;
+import com.ustb.seforge.identity.service.PasswordResetService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -36,18 +37,20 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;
     private final AuditService auditService;
+    private final PasswordResetService passwordResets;
 
     public AuthController(
             IdentityService identityService,
             LoginAttemptService loginAttemptService,
             AuthenticationManager authenticationManager,
             SecurityContextRepository securityContextRepository,
-            AuditService auditService) {
+            AuditService auditService, PasswordResetService passwordResets) {
         this.identityService = identityService;
         this.loginAttemptService = loginAttemptService;
         this.authenticationManager = authenticationManager;
         this.securityContextRepository = securityContextRepository;
         this.auditService = auditService;
+        this.passwordResets = passwordResets;
     }
 
     @GetMapping("/csrf")
@@ -72,13 +75,14 @@ public class AuthController {
             HttpServletRequest request,
             HttpServletResponse response) {
         String remoteAddress = request.getRemoteAddr();
-        if (loginAttemptService.isBlocked(login.identifier(), remoteAddress)) {
+        String loginKey = login.portal().name() + ":" + login.identifier().trim();
+        if (loginAttemptService.isBlocked(loginKey, remoteAddress)) {
             auditService.record(null, null, "AUTH_LOGIN", "USER", null, AuditService.REJECTED);
             throw new AppException(ErrorCode.RATE_LIMITED, "Too many failed login attempts; try again later");
         }
         try {
             Authentication authentication = authenticationManager.authenticate(
-                    UsernamePasswordAuthenticationToken.unauthenticated(login.identifier(), login.password()));
+                    UsernamePasswordAuthenticationToken.unauthenticated(loginKey, login.password()));
             if (request.getSession(false) != null) {
                 request.getSession(false).invalidate();
             }
@@ -89,16 +93,41 @@ public class AuthController {
 
             UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
             identityService.markLoggedIn(principal.userId());
-            loginAttemptService.clear(login.identifier(), remoteAddress);
+            loginAttemptService.clear(loginKey, remoteAddress);
             auditService.record(principal.userId(), null, "AUTH_LOGIN", "USER", principal.userId(),
                     AuditService.SUCCEEDED);
             return ApiEnvelope.success(new AuthSessionView(identityService.getUser(principal.userId())));
         } catch (AuthenticationException exception) {
             SecurityContextHolder.clearContext();
-            loginAttemptService.recordFailure(login.identifier(), remoteAddress);
+            loginAttemptService.recordFailure(loginKey, remoteAddress);
             auditService.record(null, null, "AUTH_LOGIN", "USER", null, AuditService.FAILED);
-            throw new AppException(ErrorCode.INVALID_CREDENTIALS, "Invalid username/email or password");
+            throw new AppException(ErrorCode.INVALID_CREDENTIALS, "Invalid credentials or account type");
         }
+    }
+
+    @PostMapping("/claim-student-no")
+    public ApiEnvelope<UserView> claimStudentNo(@Valid @RequestBody ClaimStudentNoRequest request,
+                                                HttpServletRequest servletRequest) {
+        String key = "CLAIM:" + request.identifier().trim();
+        String remoteAddress = servletRequest.getRemoteAddr();
+        if (loginAttemptService.isBlocked(key, remoteAddress)) {
+            throw new AppException(ErrorCode.RATE_LIMITED, "Too many failed attempts; try again later");
+        }
+        try {
+            UserView user = identityService.claimStudentNo(request);
+            loginAttemptService.clear(key, remoteAddress);
+            auditService.record(user.id(), null, "STUDENT_NUMBER_CLAIM", "USER", user.id(), AuditService.SUCCEEDED);
+            return ApiEnvelope.success(user);
+        } catch (AppException failure) {
+            loginAttemptService.recordFailure(key, remoteAddress);
+            throw failure;
+        }
+    }
+
+    @PostMapping("/reset-password")
+    public ApiEnvelope<Void> resetPassword(@Valid @RequestBody CompletePasswordResetRequest request) {
+        passwordResets.complete(request.token(), request.password());
+        return ApiEnvelope.success("Password reset complete", null);
     }
 
     @PostMapping("/logout")

@@ -8,4 +8,5 @@ public interface KnowledgePointRepository extends JpaRepository<KnowledgePoint, 
     List<KnowledgePoint> findAllByCourseIdOrderBySortOrderAscIdAsc(Long courseId);
 
     boolean existsByIdAndCourseId(Long id, Long courseId);
+    boolean existsByChapterId(Long chapterId);
 }

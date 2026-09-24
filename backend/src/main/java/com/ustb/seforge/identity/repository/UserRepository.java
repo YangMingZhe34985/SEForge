@@ -7,6 +7,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import com.ustb.seforge.identity.domain.AccountType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 public interface UserRepository extends JpaRepository<User, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -18,4 +21,12 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByUsernameIgnoreCase(String username);
 
     boolean existsByEmailIgnoreCase(String email);
+
+    @Query("select u from User u join UserProfile p on p.userId = u.id "
+            + "where (:accountType is null or p.accountType = :accountType) "
+            + "and (:search is null or lower(u.username) like :search "
+            + "or lower(u.email) like :search or lower(p.displayName) like :search "
+            + "or lower(p.studentNo) like :search)")
+    Page<User> search(@Param("accountType") AccountType accountType,
+                      @Param("search") String search, Pageable pageable);
 }

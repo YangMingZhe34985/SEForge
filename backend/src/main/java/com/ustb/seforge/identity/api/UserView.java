@@ -9,6 +9,7 @@ public record UserView(
         String username,
         String displayName,
         AccountType accountType,
+        String studentNo,
         Set<String> roles,
         boolean enabled) {
 }

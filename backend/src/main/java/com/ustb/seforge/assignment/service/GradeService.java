@@ -226,9 +226,7 @@ public class GradeService {
     }
 
     private boolean isStaff(Long courseId, Long userId) {
-        if (courseAccess.isAdmin(userId)) return true;
-        return courseAccess.roleFor(courseId, userId)
-                .map(role -> role == CourseMemberRole.TEACHER || role == CourseMemberRole.TA).orElse(false);
+        return courseAccess.isTeachingStaff(courseId, userId);
     }
 
     private Submission requireSubmission(Long submissionId) {

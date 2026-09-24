@@ -52,4 +52,6 @@ public class Course extends BaseEntity {
         if (description != null) this.description = description.trim();
         if (status != null) this.status = status;
     }
+
+    public void transferOwner(Long ownerId) { this.ownerId = ownerId; }
 }

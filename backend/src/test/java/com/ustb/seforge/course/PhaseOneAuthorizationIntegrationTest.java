@@ -85,9 +85,9 @@ class PhaseOneAuthorizationIntegrationTest {
                 ResourceType.DOCUMENT, "courses/" + otherCourse.getId() + "/private.pdf",
                 "application/pdf", 256L));
 
-        MockHttpSession teacherSession = login(teacher.username());
-        MockHttpSession studentSession = login(student.username());
-        MockHttpSession outsiderSession = login(outsider.username());
+        MockHttpSession teacherSession = login(teacher.username(), "TEACHER");
+        MockHttpSession studentSession = login(student.studentNo(), "STUDENT");
+        MockHttpSession outsiderSession = login(outsider.studentNo(), "STUDENT");
 
         // A client-controlled identity/role header cannot replace the authenticated session principal.
         mockMvc.perform(get("/api/v1/auth/me")
@@ -178,6 +178,68 @@ class PhaseOneAuthorizationIntegrationTest {
                 .andExpect(jsonPath("$.data[0].id").value(ownedResource.getId()));
     }
 
+    @Test
+    void administratorGovernanceDoesNotGrantTeachingWritesAndInvitesCanBeRevoked() throws Exception {
+        seedGlobalRoles();
+        UserView admin = identityService.createUser(new CreateUserRequest(
+                "phase1-admin@example.test", "phase1-admin", PASSWORD, "Administrator",
+                AccountType.PLATFORM, Set.of(GlobalRole.USER, GlobalRole.ADMIN)));
+        UserView teacher = createUser("phase1-owner", AccountType.TEACHER);
+        Semester semester = semesterRepository.save(new Semester(
+                "P1-E-2026", "Phase 1 E", LocalDate.of(2026, 8, 1),
+                LocalDate.of(2027, 1, 31), SemesterStatus.ACTIVE));
+        Course course = courseRepository.save(new Course(
+                "P1-E-OWNED", "Teaching course", null, semester.getId(), teacher.id()));
+        memberRepository.save(new CourseMember(course.getId(), null, teacher.id(), CourseMemberRole.TEACHER));
+        MockHttpSession adminSession = login(admin.username(), "ADMIN");
+        MockHttpSession teacherSession = login(teacher.username(), "TEACHER");
+
+        mockMvc.perform(post("/api/v1/courses").session(adminSession).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code":"ADMIN-FAKE","name":"Improper course","semesterId":%d}
+                                """.formatted(semester.getId())))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/courses/{courseId}/classes", course.getId())
+                        .session(adminSession).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code":"FORGED","name":"Unauthorized class","capacity":30}
+                                """))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/admin/overview").session(adminSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.activeCourses").value(1));
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                        "/api/v1/admin/courses/{courseId}", course.getId())
+                        .session(adminSession).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Governed course"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.name").value("Governed course"));
+
+        MvcResult inviteResult = mockMvc.perform(post("/api/v1/courses/{courseId}/invites", course.getId())
+                        .session(teacherSession).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"memberRole":"STUDENT","maxUses":2}
+                                """))
+                .andExpect(status().isCreated()).andReturn();
+        long inviteId = objectMapper.readTree(inviteResult.getResponse().getContentAsByteArray())
+                .path("data").path("id").asLong();
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                        "/api/v1/courses/{courseId}/invites/{inviteId}", course.getId(), inviteId)
+                        .session(adminSession).with(csrf()))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(
+                        "/api/v1/courses/{courseId}/invites/{inviteId}", course.getId(), inviteId)
+                        .session(teacherSession).with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.active").value(false));
+    }
+
     private void seedGlobalRoles() {
         jdbcTemplate.update("""
                 merge into roles (code, name, version, created_at, updated_at)
@@ -191,18 +253,19 @@ class PhaseOneAuthorizationIntegrationTest {
 
     private UserView createUser(String username, AccountType accountType) {
         return identityService.createUser(new CreateUserRequest(
-                username + "@example.test", username, PASSWORD, username, accountType, Set.of(GlobalRole.USER)));
+                username + "@example.test", username, PASSWORD, username, accountType, Set.of(GlobalRole.USER),
+                accountType == AccountType.STUDENT ? username.toUpperCase() : null));
     }
 
-    private MockHttpSession login(String username) throws Exception {
+    private MockHttpSession login(String identifier, String portal) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(java.util.Map.of(
-                                "identifier", username,
+                                "identifier", identifier,
+                                "portal", portal,
                                 "password", PASSWORD))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.user.username").value(username))
                 .andReturn();
         return (MockHttpSession) result.getRequest().getSession(false);
     }

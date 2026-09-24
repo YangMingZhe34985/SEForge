@@ -9,5 +9,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface UserProfileRepository extends JpaRepository<UserProfile, Long> {
     Optional<UserProfile> findByUserId(Long userId);
 
+    Optional<UserProfile> findByStudentNoIgnoreCase(String studentNo);
+
+    boolean existsByStudentNoIgnoreCase(String studentNo);
+
+    long countByAccountType(com.ustb.seforge.identity.domain.AccountType accountType);
+
     List<UserProfile> findAllByUserIdIn(Collection<Long> userIds);
 }

@@ -8,11 +8,9 @@ import { reviewApi } from '@/api/reviews'
 import { assignmentApi } from '@/api/assignments'
 import { courseApi } from '@/api/courses'
 import { jobApi } from '@/api/jobs'
-import { useAuthStore } from '@/stores/auth'
 import { useCourseStore } from '@/stores/courses'
 import type { AssignmentSummary, KnowledgeDocument, ReviewJob, ReviewReport, ReviewType, TeacherSubmission } from '@/types/domain'
 
-const auth = useAuthStore()
 const courseStore = useCourseStore()
 const type = ref<ReviewType>('DOCUMENT')
 const jobs = ref<ReviewJob[]>([])
@@ -43,7 +41,7 @@ let submissionRequestGeneration = 0
 
 const courseId = computed(() => courseStore.selectedCourseId)
 const selectedJob = computed(() => jobs.value.find((job) => job.id === selectedJobId.value))
-const canConfirmGrade = computed(() => auth.isAdmin || courseStore.selectedCourse?.role === 'TEACHER')
+const canConfirmGrade = computed(() => courseStore.selectedCourse?.role === 'TEACHER')
 const submittedOptions = computed(() => teacherSubmissions.value.filter((item) => item.submission.status !== 'DRAFT'))
 const codeAttachmentOptions = computed(() => submittedOptions.value.flatMap((item) =>
   item.submission.answers.flatMap((answer) => answer.attachmentObjectKey ? [{

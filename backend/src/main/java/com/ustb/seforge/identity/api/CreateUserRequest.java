@@ -15,5 +15,10 @@ public record CreateUserRequest(
         @NotBlank @Size(min = 10, max = 72) String password,
         @NotBlank @Size(max = 100) String displayName,
         @NotNull AccountType accountType,
-        Set<GlobalRole> roles) {
+        Set<GlobalRole> roles,
+        String studentNo) {
+    public CreateUserRequest(String email, String username, String password, String displayName,
+                             AccountType accountType, Set<GlobalRole> roles) {
+        this(email, username, password, displayName, accountType, roles, null);
+    }
 }

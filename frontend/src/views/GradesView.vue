@@ -5,15 +5,13 @@ import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { reviewApi } from '@/api/reviews'
-import { useAuthStore } from '@/stores/auth'
 import { useCourseStore } from '@/stores/courses'
 import type { GradeRecord } from '@/types/domain'
 
-const auth = useAuthStore()
 const courseStore = useCourseStore()
 const grades = ref<GradeRecord[]>([])
 const loading = ref(false)
-const canTeachCourse = computed(() => auth.isAdmin || ['TEACHER', 'TA'].includes(courseStore.selectedCourse?.role || ''))
+const canTeachCourse = computed(() => ['TEACHER', 'TA'].includes(courseStore.selectedCourse?.role || ''))
 const average = computed(() => grades.value.length ? Math.round(grades.value.reduce((sum, item) => sum + item.score, 0) / grades.value.length * 10) / 10 : 0)
 
 async function load() {

@@ -39,4 +39,11 @@ public class CourseChapter extends BaseEntity {
     public String getTitle() { return title; }
     public String getDescription() { return description; }
     public int getSortOrder() { return sortOrder; }
+
+    public void update(Long parentId, String title, String description, int sortOrder) {
+        this.parentId = parentId;
+        this.title = title.trim();
+        this.description = description;
+        this.sortOrder = sortOrder;
+    }
 }

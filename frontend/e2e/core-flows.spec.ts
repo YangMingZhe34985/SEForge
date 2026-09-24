@@ -27,9 +27,9 @@ type ApiHandler = (path: string, method: string, request: Request) => MockRespon
 const now = '2026-09-22T02:00:00Z'
 
 const users = {
-  admin: { id: '1', email: 'admin@seforge.test', username: 'admin', displayName: '平台管理员', accountType: 'TEACHER', roles: ['ADMIN', 'USER'], enabled: true },
+  admin: { id: '1', email: 'admin@seforge.test', username: 'admin', displayName: '平台管理员', accountType: 'PLATFORM', roles: ['ADMIN', 'USER'], enabled: true },
   teacher: { id: '2', email: 'teacher@seforge.test', username: 'teacher', displayName: '任课教师', accountType: 'TEACHER', roles: ['USER'], enabled: true },
-  student: { id: '3', email: 'student@seforge.test', username: 'student', displayName: '学生甲', accountType: 'STUDENT', roles: ['USER'], enabled: true },
+  student: { id: '3', email: 'student@seforge.test', username: 'student', studentNo: '2026-003', displayName: '学生甲', accountType: 'STUDENT', roles: ['USER'], enabled: true },
 } as const
 
 function pageOf<T>(items: T[]) {
@@ -96,31 +96,147 @@ async function mockPlatform(page: Page, kind: UserKind, courses: Course[], handl
   })
 }
 
+test('普通登录明确选择学生或教师身份，管理员使用独立入口', async ({ page }) => {
+  let authenticated = false
+  let receivedPortal = ''
+  await mockPlatform(page, 'teacher', [], (path, method, request) => {
+    if (path === '/auth/me' && method === 'GET' && !authenticated) return { status: 401, data: null }
+    if (path === '/auth/login' && method === 'POST') {
+      receivedPortal = (request.postDataJSON() as { portal: string }).portal
+      authenticated = true
+      return { data: { user: users.teacher } }
+    }
+    return undefined
+  })
+  await page.goto('/login')
+  await expect(page.getByRole('radio', { name: '学生' })).toBeVisible()
+  await page.getByText('教师', { exact: true }).click()
+  const form = page.locator('form').filter({ has: page.getByRole('button', { name: '进入工作台' }) })
+  await form.locator('.el-form-item').filter({ hasText: '用户名或邮箱' }).locator('input').fill('teacher')
+  await form.locator('.el-form-item').filter({ hasText: '密码' }).locator('input').fill('secure-password')
+  await form.getByRole('button', { name: '进入工作台' }).click()
+  await expect(page).toHaveURL(/\/teacher$/)
+  expect(receivedPortal).toBe('TEACHER')
+})
+
+test('管理员登录不借用学生或教师选择', async ({ page }) => {
+  let authenticated = false
+  let receivedPortal = ''
+  await mockPlatform(page, 'admin', [], (path, method, request) => {
+    if (path === '/auth/me' && method === 'GET' && !authenticated) return { status: 401, data: null }
+    if (path === '/auth/login' && method === 'POST') {
+      receivedPortal = (request.postDataJSON() as { portal: string }).portal
+      authenticated = true
+      return { data: { user: users.admin } }
+    }
+    if (path === '/admin/overview' && method === 'GET') return { data: {
+      teachers: 1, students: 1, activeCourses: 0, archivedCourses: 0, currentSemester: null,
+    } }
+    if (path === '/admin/audit-logs' && method === 'GET') return { data: pageOf([]) }
+    return undefined
+  })
+  await page.goto('/login/admin')
+  await expect(page.getByRole('heading', { name: '管理员登录' })).toBeVisible()
+  await expect(page.getByRole('radio', { name: '学生' })).toHaveCount(0)
+  const form = page.locator('form').filter({ has: page.getByRole('button', { name: '进入工作台' }) })
+  await form.locator('.el-form-item').filter({ hasText: '用户名或邮箱' }).locator('input').fill('admin')
+  await form.locator('.el-form-item').filter({ hasText: '密码' }).locator('input').fill('secure-password')
+  await form.getByRole('button', { name: '进入工作台' }).click()
+  await expect(page).toHaveURL(/\/admin$/)
+  expect(receivedPortal).toBe('ADMIN')
+})
+
+test('管理员 CSV 先预览后确认并显示逐行结果', async ({ page }) => {
+  let confirmed = false
+  await mockPlatform(page, 'admin', [], (path, method) => {
+    if (path === '/admin/users' && method === 'GET') return { data: pageOf([]) }
+    if (path === '/admin/users/import/preview' && method === 'POST') return { data: {
+      digest: 'digest-1', total: 2, valid: 1, rejected: 1,
+      rows: [
+        { line: 2, accountType: 'STUDENT', studentNo: '2026-001', username: 'alice', email: 'alice@example.test', displayName: 'Alice', status: 'VALID', message: 'Ready' },
+        { line: 3, accountType: 'STUDENT', studentNo: '2026-001', username: 'bob', email: 'bob@example.test', displayName: 'Bob', status: 'REJECTED', message: 'Duplicate student number in CSV' },
+      ],
+    } }
+    if (path === '/admin/users/import/confirm' && method === 'POST') {
+      confirmed = true
+      return { data: { total: 2, created: 1, skipped: 1, failed: 0, rows: [
+        { line: 2, accountType: 'STUDENT', studentNo: '2026-001', username: 'alice', email: 'alice@example.test', displayName: 'Alice', status: 'CREATED', message: 'Created', initialPassword: 'generated-secret' },
+        { line: 3, accountType: 'STUDENT', studentNo: '2026-001', username: 'bob', email: 'bob@example.test', displayName: 'Bob', status: 'SKIPPED', message: 'Duplicate student number in CSV' },
+      ] } }
+    }
+    return undefined
+  })
+  await page.goto('/admin/users')
+  await page.locator('label.import-button input').setInputFiles({ name: 'users.csv', mimeType: 'text/csv',
+    buffer: Buffer.from('accountType,studentNo,username,email,displayName\nSTUDENT,2026-001,alice,alice@example.test,Alice\n') })
+  const dialog = page.getByRole('dialog', { name: '受控账号导入' })
+  await expect(dialog.getByText('待创建 1 行，拒绝 1 行')).toBeVisible()
+  expect(confirmed).toBe(false)
+  await dialog.getByRole('button', { name: '确认写入' }).click()
+  await expect(dialog.getByText('创建 1，跳过 1，失败 0')).toBeVisible()
+  await expect(dialog.getByText('generated-secret')).toBeVisible()
+  expect(confirmed).toBe(true)
+})
+
+test('学生入口展示学号校验、邀请码拒绝与未授权课程提示', async ({ page }) => {
+  await mockPlatform(page, 'student', [], (path, method) => {
+    if (path === '/auth/me' && method === 'GET') return { status: 401, data: null }
+    if (path === '/courses/join' && method === 'POST') return {
+      status: 403, body: JSON.stringify({ code: 'ACCESS_DENIED', message: '邀请码无效', traceId: 'e2e-trace' }),
+    }
+    return undefined
+  })
+  await page.goto('/login')
+  await page.getByRole('button', { name: '学生注册' }).click()
+  const form = page.locator('form').filter({ has: page.getByRole('button', { name: '创建学生账号' }) })
+  await form.locator('.el-form-item').filter({ hasText: '姓名' }).locator('input').fill('测试学生')
+  await form.locator('.el-form-item').filter({ hasText: '用户名' }).locator('input').fill('test.student')
+  await form.locator('.el-form-item').filter({ hasText: '邮箱' }).locator('input').fill('test.student@example.test')
+  await form.locator('.el-form-item').filter({ hasText: /^密码/ }).locator('input').fill('SecurePass-2026')
+  await form.locator('.el-form-item').filter({ hasText: '确认密码' }).locator('input').fill('SecurePass-2026')
+  await form.getByRole('button', { name: '创建学生账号' }).click()
+  await expect(form.getByText('请输入学号')).toBeVisible()
+
+  // Reload with a valid mocked student session and verify course-scoped denial feedback.
+  await page.unroute('**/api/v1/**')
+  await mockPlatform(page, 'student', [], (path, method) => {
+    if (path === '/courses/join' && method === 'POST') return {
+      status: 403, body: JSON.stringify({ code: 'ACCESS_DENIED', message: '邀请码无效', traceId: 'e2e-trace' }),
+    }
+    return undefined
+  })
+  await page.goto('/student')
+  await page.getByRole('button', { name: '使用邀请码加入' }).click()
+  await page.getByPlaceholder('请输入课程邀请码').fill('INVALID')
+  await page.getByRole('dialog', { name: '加入课程' }).getByRole('button', { name: '加入', exact: true }).click()
+  await expect(page.getByText('邀请码无效')).toBeVisible()
+  await page.goto('/student/courses/other-private-course')
+  await expect(page).toHaveURL(/\/student\?denied=1/)
+  await expect(page.getByText('当前账号无权访问该页面')).toBeVisible()
+})
+
 test('管理员创建教师账号', async ({ page }) => {
   let createdBody: Record<string, unknown> | undefined
   let updatedRoles: unknown
+  const createdUsers: Array<Record<string, unknown>> = []
   await mockPlatform(page, 'admin', [], (path, method, request) => {
-    if (path === '/admin/users' && method === 'GET') return { data: pageOf([]) }
+    if (path === '/admin/users' && method === 'GET') return { data: pageOf(createdUsers) }
     if (path === '/admin/users' && method === 'POST') {
       createdBody = request.postDataJSON() as Record<string, unknown>
-      return {
-        data: {
+      const created = {
           id: 'teacher-new',
           ...createdBody,
           roles: ['USER'],
           enabled: true,
-        },
       }
+      createdUsers.push(created)
+      return { data: created }
     }
     if (path === '/admin/users/teacher-new/roles' && method === 'PUT') {
       updatedRoles = (request.postDataJSON() as { roles: unknown }).roles
+      createdUsers[0] = { ...createdUsers[0], roles: ['USER', 'ADMIN'] }
       return {
-        data: {
-          id: 'teacher-new',
-          ...createdBody,
-          roles: ['USER', 'ADMIN'],
-          enabled: true,
-        },
+        data: createdUsers[0],
       }
     }
     return undefined
@@ -148,7 +264,6 @@ test('教师创建课程并上传课程资料', async ({ page }) => {
   const courseClasses: Array<Record<string, unknown>> = []
   const invites: Array<Record<string, unknown>> = []
   let uploaded = false
-  let jobPolls = 0
   let inviteRequest: Record<string, unknown> | undefined
   await mockPlatform(page, 'teacher', courses, (path, method, request) => {
     if (path === '/courses' && method === 'POST') {
@@ -167,34 +282,21 @@ test('教师创建课程并上传课程资料', async ({ page }) => {
       courses.unshift(course)
       return { data: course }
     }
-    if (path === '/courses/course-new/knowledge/documents' && method === 'POST') {
+    if (path === '/courses/course-new/resources/upload' && method === 'POST') {
       uploaded = true
-      return {
-        data: {
-          document: {
-            id: 'document-1', courseId: 'course-new', name: 'requirements.md', mediaType: 'text/markdown',
-            sizeBytes: 35, checksum: 'sha256', status: 'QUEUED', createdAt: now,
-          },
-          job: { id: 'job-1', type: 'DOCUMENT_INGESTION', status: 'QUEUED', attempts: 0, maxAttempts: 3, cancelRequested: false, createdAt: now, updatedAt: now },
-          duplicate: false,
-        },
-      }
+      return { data: { id: 'resource-1', courseId: 'course-new', name: 'requirements.md',
+        resourceType: 'DOCUMENT', objectKey: 'courses/course-new/resources/resource-1',
+        contentType: 'text/markdown', sizeBytes: 35, createdAt: now } }
     }
-    if (path === '/courses/course-new/knowledge/documents' && method === 'GET') {
-      return { data: uploaded ? [{
-        id: 'document-1', courseId: 'course-new', name: 'requirements.md', mediaType: 'text/markdown',
-        sizeBytes: 35, checksum: 'sha256', status: 'READY', createdAt: now,
-        job: { id: 'job-1', type: 'INGEST_DOCUMENT', status: 'COMPLETED', attempts: 1, maxAttempts: 3, cancelRequested: false, createdAt: now, updatedAt: now },
-      }] : [] }
-    }
-    if (path === '/jobs/job-1' && method === 'GET') {
-      jobPolls += 1
-      return { data: { id: 'job-1', type: 'INGEST_DOCUMENT', status: jobPolls > 1 ? 'COMPLETED' : 'RUNNING', attempts: 1, maxAttempts: 3, cancelRequested: false, createdAt: now, updatedAt: now } }
+    if (path === '/courses/course-new/resources' && method === 'GET') {
+      return { data: uploaded ? [{ id: 'resource-1', courseId: 'course-new', name: 'requirements.md',
+        resourceType: 'DOCUMENT', objectKey: 'courses/course-new/resources/resource-1',
+        contentType: 'text/markdown', sizeBytes: 35, createdAt: now }] : [] }
     }
     if (path === '/courses/course-new/classes' && method === 'GET') return { data: courseClasses }
     if (path === '/courses/course-new/classes' && method === 'POST') {
       const input = request.postDataJSON() as Record<string, unknown>
-      const courseClass = { id: 'class-1', courseId: 'course-new', ...input, createdAt: now }
+      const courseClass = { id: 'class-1', courseId: 'course-new', ...input, active: true, createdAt: now }
       courseClasses.push(courseClass)
       return { data: courseClass }
     }
@@ -223,22 +325,20 @@ test('教师创建课程并上传课程资料', async ({ page }) => {
   await expect(page).toHaveURL(/\/teacher\/courses\/course-new$/)
   await expect(page.getByText('软件工程实践', { exact: true }).first()).toBeVisible()
 
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.locator('label.upload-button').filter({ hasText: '上传课程资料' }).locator('input').setInputFiles({
     name: 'requirements.md',
     mimeType: 'text/markdown',
     buffer: Buffer.from('# Software requirements specification'),
   })
   await expect(page.getByText('requirements.md')).toBeVisible()
-  await expect(page.getByText('READY', { exact: true })).toBeVisible({ timeout: 5000 })
   expect(uploaded).toBe(true)
-  expect(jobPolls).toBeGreaterThan(1)
 
   await page.getByRole('tab', { name: '教学管理' }).click()
   await page.getByRole('button', { name: '创建教学班' }).click()
   const classDialog = page.getByRole('dialog', { name: '创建教学班' })
   await classDialog.locator('.el-form-item').filter({ hasText: '教学班代码' }).locator('input').fill('SE-01')
   await classDialog.locator('.el-form-item').filter({ hasText: '教学班名称' }).locator('input').fill('软件工程 1 班')
-  await classDialog.getByRole('button', { name: '创建', exact: true }).click()
+  await classDialog.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByText('软件工程 1 班', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: '创建邀请码' }).click()
@@ -293,11 +393,12 @@ test('学生注册、通过邀请码加入并查看授权课程资源', async ({
   await registerForm.locator('.el-form-item').filter({ hasText: '姓名' }).locator('input').fill('学生乙')
   await registerForm.locator('.el-form-item').filter({ hasText: '用户名' }).locator('input').fill('student.two')
   await registerForm.locator('.el-form-item').filter({ hasText: '邮箱' }).locator('input').fill('student.two@seforge.test')
+  await registerForm.locator('.el-form-item').filter({ hasText: '学号' }).locator('input').fill('2026-003')
   await registerForm.locator('.el-form-item').filter({ hasText: /^密码/ }).locator('input').fill('SecurePass-2026')
   await registerForm.locator('.el-form-item').filter({ hasText: '确认密码' }).locator('input').fill('SecurePass-2026')
   await registerForm.getByRole('button', { name: '创建学生账号' }).click()
   await expect(page.getByText('注册成功，请使用新账号登录')).toBeVisible()
-  expect(registeredBody).toMatchObject({ username: 'student.two', displayName: '学生乙', email: 'student.two@seforge.test' })
+  expect(registeredBody).toMatchObject({ username: 'student.two', studentNo: '2026-003', displayName: '学生乙', email: 'student.two@seforge.test' })
 
   const loginForm = page.locator('form').filter({ has: page.getByRole('button', { name: '进入工作台' }) })
   await loginForm.locator('.el-form-item').filter({ hasText: '密码' }).locator('input').fill('SecurePass-2026')

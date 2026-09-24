@@ -70,4 +70,5 @@ public class CourseInvite extends BaseEntity {
         usedCount++;
         if (maxUses != null && usedCount >= maxUses) active = false;
     }
+    public void revoke() { active = false; }
 }

@@ -13,7 +13,7 @@ const auth = useAuthStore()
 const store = useCourseStore()
 const createVisible = ref(false)
 const courseForm = reactive({ code: '', name: '', description: '', semesterId: '' })
-const canCreateCourse = computed(() => auth.isAdmin || auth.user?.accountType === 'TEACHER')
+const canCreateCourse = computed(() => auth.canTeach)
 
 async function createCourse() {
   if (!courseForm.code.trim() || !courseForm.name.trim() || !courseForm.semesterId) {

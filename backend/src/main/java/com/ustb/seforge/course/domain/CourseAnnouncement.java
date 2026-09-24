@@ -38,4 +38,11 @@ public class CourseAnnouncement extends BaseEntity {
     public String getTitle() { return title; }
     public String getContent() { return content; }
     public Instant getPublishedAt() { return publishedAt; }
+
+    public void update(String title, String content) {
+        this.title = title.trim();
+        this.content = content.trim();
+    }
+
+    public void withdraw() { publishedAt = null; }
 }

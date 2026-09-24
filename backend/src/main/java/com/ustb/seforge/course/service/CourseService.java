@@ -20,6 +20,10 @@ import com.ustb.seforge.course.api.CreateSemesterRequest;
 import com.ustb.seforge.course.api.KnowledgePointView;
 import com.ustb.seforge.course.api.SemesterView;
 import com.ustb.seforge.course.api.UpdateCourseRequest;
+import com.ustb.seforge.course.api.UpdateCourseClassRequest;
+import com.ustb.seforge.course.api.UpdateCourseMemberRequest;
+import com.ustb.seforge.course.api.UpdateSemesterRequest;
+import com.ustb.seforge.course.api.AdminUserMembershipView;
 import com.ustb.seforge.course.domain.Course;
 import com.ustb.seforge.course.domain.CourseChapter;
 import com.ustb.seforge.course.domain.CourseClass;
@@ -43,8 +47,10 @@ import com.ustb.seforge.course.repository.SemesterRepository;
 import com.ustb.seforge.identity.service.IdentityService;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -100,6 +106,10 @@ public class CourseService {
         if (semesterRepository.existsByCodeIgnoreCase(request.code().trim())) {
             throw new AppException(ErrorCode.CONFLICT, "Semester code already exists");
         }
+        if (request.status() == com.ustb.seforge.course.domain.SemesterStatus.ACTIVE
+                && semesterRepository.existsByStatus(com.ustb.seforge.course.domain.SemesterStatus.ACTIVE)) {
+            throw new AppException(ErrorCode.CONFLICT, "Another semester is already current");
+        }
         Semester semester = semesterRepository.save(new Semester(
                 request.code().trim().toUpperCase(), request.name().trim(), request.startsOn(), request.endsOn(),
                 request.status()));
@@ -112,9 +122,23 @@ public class CourseService {
     }
 
     @Transactional
+    public SemesterView updateSemester(Long semesterId, UpdateSemesterRequest request) {
+        if (!request.endsOn().isAfter(request.startsOn())) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, "Semester end date must be after start date");
+        }
+        Semester semester = requireSemester(semesterId);
+        if (request.status() == com.ustb.seforge.course.domain.SemesterStatus.ACTIVE
+                && semesterRepository.existsByStatusAndIdNot(request.status(), semesterId)) {
+            throw new AppException(ErrorCode.CONFLICT, "Another semester is already current");
+        }
+        semester.update(request.name(), request.startsOn(), request.endsOn(), request.status());
+        return semesterView(semester);
+    }
+
+    @Transactional
     public CourseDetailsView createCourse(Long actorId, CreateCourseRequest request) {
-        if (!accessService.isAdmin(actorId) && !identityService.isTeacher(actorId)) {
-            throw new AppException(ErrorCode.ACCESS_DENIED, "Only teachers and administrators can create courses");
+        if (!identityService.isTeacher(actorId)) {
+            throw new AppException(ErrorCode.ACCESS_DENIED, "Only teacher accounts can create courses");
         }
         Semester semester = requireSemester(request.semesterId());
         String code = request.code().trim().toUpperCase();
@@ -129,10 +153,18 @@ public class CourseService {
 
     @Transactional(readOnly = true)
     public PageResponse<CourseSummaryView> listCourses(Long actorId, int page, int size) {
+        return listCourses(actorId, page, size, null, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<CourseSummaryView> listCourses(Long actorId, int page, int size,
+                                                        String search, CourseStatus status, Long semesterId) {
         PageRequest pageable = PageRequest.of(
                 Math.max(page, 0), Math.min(Math.max(size, 1), 100), Sort.by(Sort.Direction.DESC, "createdAt"));
+        String pattern = search == null || search.isBlank() ? null
+                : "%" + search.trim().toLowerCase(java.util.Locale.ROOT) + "%";
         Page<Course> courses = accessService.isAdmin(actorId)
-                ? courseRepository.findAll(pageable)
+                ? courseRepository.searchAll(pattern, status, semesterId, pageable)
                 : courseRepository.findVisibleToUser(actorId, CourseMemberStatus.ACTIVE, pageable);
         List<CourseSummaryView> views = courses.stream().map(course -> courseSummary(course, actorId)).toList();
         return new PageResponse<>(views, courses.getNumber(), courses.getSize(), courses.getTotalElements());
@@ -144,11 +176,48 @@ public class CourseService {
         return courseDetails(requireCourse(courseId), actorId);
     }
 
+    @Transactional(readOnly = true)
+    public List<AdminUserMembershipView> adminMemberships(Long targetUserId, Long actorId) {
+        if (!accessService.isAdmin(actorId)) throw new AppException(ErrorCode.ACCESS_DENIED, "Administrator required");
+        identityService.getUser(targetUserId);
+        return memberRepository.findAllByUserIdAndStatus(targetUserId, CourseMemberStatus.ACTIVE).stream()
+                .map(member -> new AdminUserMembershipView(member.getCourseId(),
+                        requireCourse(member.getCourseId()).getName(), member.getClassId(), member.getRole()))
+                .toList();
+    }
+
     @Transactional
     public CourseDetailsView updateCourse(Long courseId, Long actorId, UpdateCourseRequest request) {
         accessService.requireTeacherOrAdmin(courseId, actorId);
         Course course = requireCourse(courseId);
         course.update(request.name(), request.description(), request.status());
+        return courseDetails(course, actorId);
+    }
+
+    @Transactional
+    public CourseDetailsView adminUpdateCourse(Long courseId, Long actorId, UpdateCourseRequest request) {
+        if (!accessService.isAdmin(actorId)) throw new AppException(ErrorCode.ACCESS_DENIED, "Administrator required");
+        Course course = requireCourse(courseId);
+        course.update(request.name(), request.description(), request.status());
+        return courseDetails(course, actorId);
+    }
+
+    @Transactional
+    public CourseDetailsView transferOwner(Long courseId, Long actorId, Long newOwnerId) {
+        if (!accessService.isAdmin(actorId)) throw new AppException(ErrorCode.ACCESS_DENIED, "Administrator required");
+        if (!identityService.isTeacher(newOwnerId) || !identityService.getUser(newOwnerId).enabled()) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, "New owner must have teacher qualification");
+        }
+        Course course = requireCourse(courseId);
+        CourseMember member = memberRepository.findByCourseIdAndUserId(courseId, newOwnerId).orElse(null);
+        if (member == null) {
+            memberRepository.save(new CourseMember(courseId, null, newOwnerId, CourseMemberRole.TEACHER));
+        } else if (member.getStatus() != CourseMemberStatus.ACTIVE) {
+            member.reactivate(member.getClassId(), CourseMemberRole.TEACHER);
+        } else {
+            member.update(member.getClassId(), CourseMemberRole.TEACHER);
+        }
+        course.transferOwner(newOwnerId);
         return courseDetails(course, actorId);
     }
 
@@ -172,13 +241,31 @@ public class CourseService {
     }
 
     @Transactional
+    public CourseClassView updateClass(Long courseId, Long classId, Long actorId,
+                                       UpdateCourseClassRequest request) {
+        accessService.requireTeacherOrAdmin(courseId, actorId);
+        CourseClass courseClass = requireClass(courseId, classId);
+        long memberCount = memberRepository.countByCourseIdAndClassIdAndStatus(
+                courseId, classId, CourseMemberStatus.ACTIVE);
+        if (request.capacity() != null && request.capacity() < memberCount) {
+            throw new AppException(ErrorCode.CONFLICT, "Class capacity cannot be lower than active membership");
+        }
+        if (!request.active() && memberCount > 0) {
+            throw new AppException(ErrorCode.CONFLICT, "Remove or transfer members before closing the class");
+        }
+        courseClass.update(request.name(), request.capacity(), request.primaryClass());
+        if (request.active()) courseClass.reopen(); else courseClass.close();
+        return classView(courseClass);
+    }
+
+    @Transactional
     public CourseInviteView createInvite(Long courseId, Long actorId, CreateInviteRequest request) {
         accessService.requireTeacherOrAdmin(courseId, actorId);
         requireCourse(courseId);
         if (request.classId() != null) requireClass(courseId, request.classId());
         CourseMemberRole role = request.memberRole() == null ? CourseMemberRole.STUDENT : request.memberRole();
-        if (role == CourseMemberRole.TEACHER) {
-            throw new AppException(ErrorCode.VALIDATION_FAILED, "Teacher membership cannot be granted by invite");
+        if (role != CourseMemberRole.STUDENT) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, "Invites may only grant student membership");
         }
         CourseInvite invite = inviteRepository.save(new CourseInvite(
                 generateInviteCode(), courseId, request.classId(), role, request.maxUses(), request.expiresAt(), actorId));
@@ -190,6 +277,16 @@ public class CourseService {
         accessService.requireTeacherOrAdmin(courseId, actorId);
         return inviteRepository.findAllByCourseIdOrderByCreatedAtDesc(courseId).stream()
                 .map(this::inviteView).toList();
+    }
+
+    @Transactional
+    public CourseInviteView revokeInvite(Long courseId, Long inviteId, Long actorId) {
+        accessService.requireTeacherOrAdmin(courseId, actorId);
+        CourseInvite invite = inviteRepository.findById(inviteId)
+                .filter(value -> value.getCourseId().equals(courseId))
+                .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Invite not found"));
+        invite.revoke();
+        return inviteView(invite);
     }
 
     @Transactional
@@ -216,6 +313,7 @@ public class CourseService {
         }
         if (invite.getClassId() != null) {
             CourseClass courseClass = requireClassForUpdate(course.getId(), invite.getClassId());
+            if (!courseClass.isActive()) throw new AppException(ErrorCode.INVITE_INVALID, "Class is closed");
             Integer capacity = courseClass.getCapacity();
             if (capacity != null && memberRepository.countByCourseIdAndClassIdAndStatus(
                     course.getId(), courseClass.getId(), CourseMemberStatus.ACTIVE) >= capacity) {
@@ -257,6 +355,32 @@ public class CourseService {
     }
 
     @Transactional
+    public CourseMemberView updateMember(Long courseId, Long targetUserId, Long actorId,
+                                         UpdateCourseMemberRequest request) {
+        accessService.requireTeacherOrAdmin(courseId, actorId);
+        Course course = requireCourse(courseId);
+        if (course.getOwnerId().equals(targetUserId) || request.role() == CourseMemberRole.TEACHER) {
+            throw new AppException(ErrorCode.CONFLICT, "Course owner and teacher role require administrator transfer");
+        }
+        CourseMember member = memberRepository.findByCourseIdAndUserIdAndStatus(
+                        courseId, targetUserId, CourseMemberStatus.ACTIVE)
+                .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Course member not found"));
+        if (request.classId() != null) {
+            CourseClass courseClass = requireClassForUpdate(courseId, request.classId());
+            if (!courseClass.isActive()) throw new AppException(ErrorCode.CONFLICT, "Class is closed");
+            if (!request.classId().equals(member.getClassId()) && courseClass.getCapacity() != null
+                    && memberRepository.countByCourseIdAndClassIdAndStatus(
+                    courseId, request.classId(), CourseMemberStatus.ACTIVE) >= courseClass.getCapacity()) {
+                throw new AppException(ErrorCode.CONFLICT, "Class has reached its capacity");
+            }
+        }
+        member.update(request.classId(), request.role());
+        return new CourseMemberView(member.getId(), member.getUserId(),
+                identityService.displayNames(List.of(targetUserId)).getOrDefault(targetUserId, "Unknown user"),
+                member.getClassId(), member.getRole(), member.getJoinedAt());
+    }
+
+    @Transactional
     public CourseChapterView createChapter(Long courseId, Long actorId, CreateChapterRequest request) {
         accessService.requireTeachingStaff(courseId, actorId);
         requireCourse(courseId);
@@ -271,6 +395,36 @@ public class CourseService {
         accessService.requireMember(courseId, actorId);
         return chapterRepository.findAllByCourseIdOrderBySortOrderAscIdAsc(courseId).stream()
                 .map(this::chapterView).toList();
+    }
+
+    @Transactional
+    public CourseChapterView updateChapter(Long courseId, Long chapterId, Long actorId,
+                                           CreateChapterRequest request) {
+        accessService.requireTeachingStaff(courseId, actorId);
+        CourseChapter chapter = requireChapter(courseId, chapterId);
+        if (request.parentId() != null) {
+            Set<Long> visited = new HashSet<>();
+            Long ancestorId = request.parentId();
+            while (ancestorId != null) {
+                if (ancestorId.equals(chapterId) || !visited.add(ancestorId)) {
+                    throw new AppException(ErrorCode.VALIDATION_FAILED, "Chapter parent would create a cycle");
+                }
+                ancestorId = requireChapter(courseId, ancestorId).getParentId();
+            }
+        }
+        chapter.update(request.parentId(), request.title(), trimNullable(request.description()), request.sortOrder());
+        return chapterView(chapter);
+    }
+
+    @Transactional
+    public void deleteChapter(Long courseId, Long chapterId, Long actorId) {
+        accessService.requireTeachingStaff(courseId, actorId);
+        CourseChapter chapter = requireChapter(courseId, chapterId);
+        if (chapterRepository.existsByParentId(chapterId) || knowledgePointRepository.existsByChapterId(chapterId)
+                || resourceRepository.existsByChapterIdAndStatus(chapterId, ResourceStatus.ACTIVE)) {
+            throw new AppException(ErrorCode.CONFLICT, "Chapter still has dependent content");
+        }
+        chapterRepository.delete(chapter);
     }
 
     @Transactional
@@ -289,6 +443,22 @@ public class CourseService {
         accessService.requireMember(courseId, actorId);
         return knowledgePointRepository.findAllByCourseIdOrderBySortOrderAscIdAsc(courseId).stream()
                 .map(this::knowledgePointView).toList();
+    }
+
+    @Transactional
+    public KnowledgePointView updateKnowledgePoint(Long courseId, Long pointId, Long actorId,
+                                                    CreateKnowledgePointRequest request) {
+        accessService.requireTeachingStaff(courseId, actorId);
+        KnowledgePoint point = requireKnowledgePoint(courseId, pointId);
+        if (request.chapterId() != null) requireChapter(courseId, request.chapterId());
+        point.update(request.chapterId(), request.title(), trimNullable(request.description()), request.sortOrder());
+        return knowledgePointView(point);
+    }
+
+    @Transactional
+    public void deleteKnowledgePoint(Long courseId, Long pointId, Long actorId) {
+        accessService.requireTeachingStaff(courseId, actorId);
+        knowledgePointRepository.delete(requireKnowledgePoint(courseId, pointId));
     }
 
     @Transactional
@@ -324,6 +494,15 @@ public class CourseService {
                         resourceId, courseId, ResourceStatus.ACTIVE)
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Course resource not found"));
         return resourceView(resource);
+    }
+
+    @Transactional
+    public void removeResource(Long courseId, Long resourceId, Long actorId) {
+        accessService.requireTeachingStaff(courseId, actorId);
+        CourseResource resource = resourceRepository.findByIdAndCourseIdAndStatus(
+                        resourceId, courseId, ResourceStatus.ACTIVE)
+                .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Course resource not found"));
+        resource.remove();
     }
 
     private Course requireCourse(Long id) {
@@ -363,6 +542,15 @@ public class CourseService {
         return chapter;
     }
 
+    private KnowledgePoint requireKnowledgePoint(Long courseId, Long pointId) {
+        KnowledgePoint point = knowledgePointRepository.findById(pointId)
+                .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Knowledge point not found"));
+        if (!point.getCourseId().equals(courseId)) {
+            throw new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Knowledge point not found");
+        }
+        return point;
+    }
+
     private String generateInviteCode() {
         for (int attempt = 0; attempt < 10; attempt++) {
             StringBuilder code = new StringBuilder(INVITE_LENGTH);
@@ -387,7 +575,8 @@ public class CourseService {
         Semester semester = requireSemester(course.getSemesterId());
         return new CourseSummaryView(
                 course.getId(), course.getCode(), course.getName(), course.getDescription(), semester.getId(),
-                semester.getName(), course.getStatus(), accessService.roleFor(course.getId(), actorId).orElse(null),
+                semester.getName(), course.getOwnerId(), course.getStatus(),
+                accessService.roleFor(course.getId(), actorId).orElse(null),
                 memberRepository.countByCourseIdAndStatus(course.getId(), CourseMemberStatus.ACTIVE),
                 course.getCreatedAt());
     }
@@ -411,7 +600,7 @@ public class CourseService {
 
     private CourseClassView classView(CourseClass courseClass) {
         return new CourseClassView(courseClass.getId(), courseClass.getCode(), courseClass.getName(),
-                courseClass.getCapacity(), courseClass.isPrimaryClass());
+                courseClass.getCapacity(), courseClass.isPrimaryClass(), courseClass.isActive());
     }
 
     private CourseInviteView inviteView(CourseInvite invite) {

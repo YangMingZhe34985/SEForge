@@ -23,7 +23,7 @@ function unavailableHome(): RouteLocationRaw {
 }
 
 function workspacePrefix(): 'teacher' | 'student' {
-  // Admins act as teachers inside course workspaces; the admin workspace stays separate.
+  // Teaching qualification controls teaching navigation; ADMIN alone does not.
   return useAuthStore(pinia).canTeach ? 'teacher' : 'student'
 }
 
@@ -50,6 +50,12 @@ export const routes: RouteRecordRaw[] = [
     name: 'login',
     component: () => import('@/views/LoginView.vue'),
     meta: { requiresAuth: false, title: '登录' },
+  },
+  {
+    path: '/login/admin',
+    name: 'admin-login',
+    component: () => import('@/views/LoginView.vue'),
+    meta: { requiresAuth: false, title: '管理员登录' },
   },
   { path: '/', redirect: () => roleHome() },
   {
@@ -82,6 +88,7 @@ export const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, title: 'SEForge 学习工作台', workspace: 'student' },
     children: [
       { path: '', name: 'student-home', component: () => import('@/views/StudentHomeView.vue'), meta: { requiresAuth: true, title: '我的课程', workspace: 'student' } },
+      { path: 'profile', name: 'student-profile', component: () => import('@/views/StudentProfileView.vue'), meta: { requiresAuth: true, title: '个人资料', workspace: 'student' } },
       { path: 'courses/:courseId', name: 'student-course', component: () => import('@/views/CourseWorkspaceView.vue'), meta: { requiresAuth: true, title: '课程内容', workspace: 'student' } },
       { path: 'courses/:courseId/assistant', name: 'student-course-assistant', component: () => import('@/views/CourseAssistantView.vue'), meta: { requiresAuth: true, title: '课程助手', workspace: 'student' } },
       { path: 'courses/:courseId/assignments', name: 'student-course-assignments', component: () => import('@/views/AssignmentsView.vue'), meta: { requiresAuth: true, title: '作业与 Tutor', workspace: 'student' } },
@@ -117,13 +124,13 @@ router.beforeEach(async (to) => {
   try {
     await auth.initialize()
   } catch {
-    if (to.meta.requiresAuth) return { name: 'login', query: { redirect: to.fullPath, unavailable: '1' } }
+    if (to.meta.requiresAuth) return { name: to.meta.workspace === 'admin' ? 'admin-login' : 'login', query: { redirect: to.fullPath, unavailable: '1' } }
   }
 
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
-    return { name: 'login', query: { redirect: to.fullPath } }
+    return { name: to.meta.workspace === 'admin' ? 'admin-login' : 'login', query: { redirect: to.fullPath } }
   }
-  if (to.name === 'login' && auth.isAuthenticated) return roleHome()
+  if ((to.name === 'login' || to.name === 'admin-login') && auth.isAuthenticated) return roleHome()
 
   // Workspace separation. The server remains the authority for every API call; these
   // guards only keep each identity inside its own navigation surface.
@@ -133,8 +140,10 @@ router.beforeEach(async (to) => {
     if (to.meta.workspace === 'student' && auth.canTeach) {
       // Teachers/admins arriving via legacy links or bookmarks land on the teacher
       // counterpart of the same student route (names are symmetric by design).
-      return { name: String(to.name).replace(/^student-/, 'teacher-'), params: to.params, query: to.query }
+      const counterpart = String(to.name).replace(/^student-/, 'teacher-')
+      return router.hasRoute(counterpart) ? { name: counterpart, params: to.params, query: to.query } : deniedHome()
     }
+    if (to.meta.workspace === 'student' && auth.user?.accountType !== 'STUDENT') return deniedHome()
   }
 
   if (to.params.courseId) {
@@ -161,7 +170,7 @@ router.beforeEach(async (to) => {
     } catch {
       return unavailableHome()
     }
-    if (!auth.isAdmin && !courses.canManageSelected) return deniedHome()
+    if (!courses.canManageSelected) return deniedHome()
   }
   if (to.meta.capability === 'admin' && !auth.isAdmin) return deniedHome()
   document.title = `${to.meta.title} · SEForge`

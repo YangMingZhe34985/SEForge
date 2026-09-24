@@ -33,4 +33,15 @@ describe('adminApi contracts', () => {
       params: { page: 1, size: 20 },
     })
   })
+
+  it('uses separate preview and confirm requests for CSV account imports', async () => {
+    requestMock.mockResolvedValueOnce({ digest: 'abc', valid: 1, rejected: 0, rows: [] })
+    requestMock.mockResolvedValueOnce({ created: 1, skipped: 0, failed: 0, rows: [] })
+    const file = new File(['accountType,studentNo,username,email,displayName'], 'users.csv', { type: 'text/csv' })
+    await adminApi.previewImport(file)
+    await adminApi.confirmImport(file, 'abc')
+    expect(requestMock.mock.calls[0]?.[0]).toMatchObject({ url: '/admin/users/import/preview', method: 'POST' })
+    expect(requestMock.mock.calls[1]?.[0]).toMatchObject({ url: '/admin/users/import/confirm', method: 'POST', params: { digest: 'abc' } })
+    expect((requestMock.mock.calls[1]?.[0]?.data as FormData).get('file')).toBe(file)
+  })
 })

@@ -38,7 +38,6 @@ public class AssignmentAuthorizationService {
     @Transactional(readOnly = true)
     public void requireVisible(Assignment assignment, Long userId) {
         courseAccess.requireMember(assignment.getCourseId(), userId);
-        if (courseAccess.isAdmin(userId)) return;
         CourseMember member = members.findByCourseIdAndUserIdAndStatus(
                         assignment.getCourseId(), userId, CourseMemberStatus.ACTIVE)
                 .orElseThrow(this::denied);

@@ -9,6 +9,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -32,5 +34,15 @@ public class AdminSemesterController {
         auditService.record(principal.userId(), null, "SEMESTER_CREATE", "SEMESTER", semester.id(),
                 AuditService.SUCCEEDED);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiEnvelope.success(semester));
+    }
+
+    @PutMapping("/{semesterId}")
+    public ApiEnvelope<SemesterView> update(@PathVariable Long semesterId,
+                                            @AuthenticationPrincipal UserPrincipal principal,
+                                            @Valid @RequestBody UpdateSemesterRequest request) {
+        SemesterView semester = courseService.updateSemester(semesterId, request);
+        auditService.record(principal.userId(), null, "SEMESTER_UPDATE", "SEMESTER", semesterId,
+                AuditService.SUCCEEDED);
+        return ApiEnvelope.success(semester);
     }
 }

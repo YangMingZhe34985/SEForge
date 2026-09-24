@@ -7,7 +7,6 @@ import EmptyState from '@/components/EmptyState.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { courseApi } from '@/api/courses'
 import { jobApi } from '@/api/jobs'
-import { useAuthStore } from '@/stores/auth'
 import { useCourseStore } from '@/stores/courses'
 import type {
   CourseAnnouncement,
@@ -23,7 +22,6 @@ import type {
 
 const route = useRoute()
 const router = useRouter()
-const auth = useAuthStore()
 const store = useCourseStore()
 
 const courseId = computed(() => String(route.params.courseId ?? ''))
@@ -40,6 +38,13 @@ const announcementVisible = ref(false)
 const editVisible = ref(false)
 const detailLoading = ref(false)
 const documentUploading = ref(false)
+const resourceUploading = ref(false)
+const editingChapterId = ref<string | null>(null)
+const editingPointId = ref<string | null>(null)
+const editingClassId = ref<string | null>(null)
+const editingAnnouncementId = ref<string | null>(null)
+const editingMember = ref<CourseMember | null>(null)
+const memberForm = reactive({ classId: '' as string, role: 'STUDENT' as 'STUDENT' | 'TA' })
 const resources = ref<CourseResource[]>([])
 const documents = ref<KnowledgeDocument[]>([])
 const documentJobs = reactive<Record<string, AsyncJob>>({})
@@ -70,8 +75,8 @@ const terminalJobStatuses = new Set(['COMPLETED', 'FAILED', 'DEAD_LETTER', 'CANC
 let detailGeneration = 0
 let componentMounted = true
 const selected = computed(() => store.courses.find((course) => course.id === courseId.value) ?? null)
-const canManageSelected = computed(() => auth.isAdmin || ['TEACHER', 'TA'].includes(selected.value?.role || ''))
-const canAdministerSelected = computed(() => auth.isAdmin || selected.value?.role === 'TEACHER')
+const canManageSelected = computed(() => ['TEACHER', 'TA'].includes(selected.value?.role || ''))
+const canAdministerSelected = computed(() => selected.value?.role === 'TEACHER')
 const pagedMembers = computed(() => {
   const start = (memberPage.value - 1) * memberPageSize
   return members.value.slice(start, start + memberPageSize)
@@ -97,14 +102,16 @@ async function loadDetails(targetCourseId: string | null) {
   try {
     const [resourceList, documentList, chapterList, pointList, announcementPageResult] = await Promise.all([
       courseApi.resources(targetCourseId),
-      courseApi.documents(targetCourseId),
+      // Knowledge ingestion is a later-phase capability: its outage must not hide
+      // the Phase 1 course resources, chapters, and announcements.
+      courseApi.documents(targetCourseId).catch(() => [] as KnowledgeDocument[]),
       courseApi.chapters(targetCourseId),
       courseApi.knowledgePoints(targetCourseId),
       courseApi.announcements(targetCourseId, 0, announcementPageSize),
     ])
     const course = store.courses.find((item) => item.id === targetCourseId)
-    const mayViewTeaching = auth.isAdmin || ['TEACHER', 'TA'].includes(course?.role || '')
-    const mayAdminister = auth.isAdmin || course?.role === 'TEACHER'
+    const mayViewTeaching = ['TEACHER', 'TA'].includes(course?.role || '')
+    const mayAdminister = course?.role === 'TEACHER'
     let classList: CourseClass[] = []
     let memberList: CourseMember[] = []
     let inviteList: CourseInvite[] = []
@@ -212,6 +219,33 @@ async function createResource() {
     Object.assign(resourceForm, { name: '', description: '', resourceType: 'LINK', objectKey: '', contentType: '', chapterId: '' })
     ElMessage.success('外部对象元数据已登记；此操作未上传或校验文件')
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '资源登记失败') }
+}
+
+async function uploadResource(files: FileList | null) {
+  const file = files?.item(0)
+  if (!selected.value || !file) return
+  resourceUploading.value = true
+  try {
+    resources.value.unshift(await courseApi.uploadResource(selected.value.id, file))
+    ElMessage.success('课程原始资料已上传')
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '资源上传失败') }
+  finally { resourceUploading.value = false }
+}
+
+async function downloadResource(resource: CourseResource) {
+  if (!selected.value) return
+  try { await courseApi.downloadResource(selected.value.id, resource) }
+  catch (error) { ElMessage.error(error instanceof Error ? error.message : '资源下载失败') }
+}
+
+async function deleteResource(resource: CourseResource) {
+  if (!selected.value) return
+  try {
+    await ElMessageBox.confirm(`确定撤下“${resource.name}”吗？现有对象保留以便审计。`, '撤下资源', { type: 'warning' })
+    await courseApi.deleteResource(selected.value.id, resource.id)
+    resources.value = resources.value.filter((item) => item.id !== resource.id)
+    ElMessage.success('资源已撤下')
+  } catch (error) { if (!isDialogDismissal(error)) ElMessage.error(error instanceof Error ? error.message : '撤下失败') }
 }
 
 async function uploadDocument(files: FileList | null) {
@@ -331,20 +365,63 @@ function formatBytes(bytes: number): string {
 async function createChapter() {
   if (!selected.value || !chapterForm.title.trim()) return
   try {
-    chapters.value.push(await courseApi.createChapter(selected.value.id, { ...chapterForm }))
+    const value = editingChapterId.value
+      ? await courseApi.updateChapter(selected.value.id, editingChapterId.value, { ...chapterForm })
+      : await courseApi.createChapter(selected.value.id, { ...chapterForm })
+    const index = chapters.value.findIndex((item) => item.id === value.id)
+    if (index >= 0) chapters.value[index] = value
+    else chapters.value.push(value)
     chapters.value.sort((a, b) => a.sortOrder - b.sortOrder)
     chapterVisible.value = false
+    editingChapterId.value = null
     Object.assign(chapterForm, { title: '', description: '', sortOrder: chapters.value.length + 1, parentId: undefined })
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '章节创建失败') }
+}
+
+function editChapter(chapter: CourseChapter) {
+  editingChapterId.value = chapter.id
+  Object.assign(chapterForm, { title: chapter.title, description: chapter.description || '', sortOrder: chapter.sortOrder, parentId: chapter.parentId || undefined })
+  chapterVisible.value = true
+}
+
+async function deleteChapter(chapter: CourseChapter) {
+  if (!selected.value) return
+  try {
+    await ElMessageBox.confirm(`确定删除章节“${chapter.title}”吗？关联内容未清空时服务端会拒绝。`, '删除章节', { type: 'warning' })
+    await courseApi.deleteChapter(selected.value.id, chapter.id)
+    chapters.value = chapters.value.filter((item) => item.id !== chapter.id)
+  } catch (error) { if (!isDialogDismissal(error)) ElMessage.error(error instanceof Error ? error.message : '章节删除失败') }
 }
 
 async function createPoint() {
   if (!selected.value || !pointForm.title.trim()) return
   try {
-    knowledgePoints.value.push(await courseApi.createKnowledgePoint(selected.value.id, { ...pointForm, chapterId: pointForm.chapterId || undefined }))
+    const input = { ...pointForm, chapterId: pointForm.chapterId || undefined }
+    const value = editingPointId.value
+      ? await courseApi.updateKnowledgePoint(selected.value.id, editingPointId.value, input)
+      : await courseApi.createKnowledgePoint(selected.value.id, input)
+    const index = knowledgePoints.value.findIndex((item) => item.id === value.id)
+    if (index >= 0) knowledgePoints.value[index] = value
+    else knowledgePoints.value.push(value)
     pointVisible.value = false
+    editingPointId.value = null
     Object.assign(pointForm, { title: '', description: '', chapterId: '', sortOrder: knowledgePoints.value.length + 1 })
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '知识点创建失败') }
+}
+
+function editPoint(point: KnowledgePoint) {
+  editingPointId.value = point.id
+  Object.assign(pointForm, { title: point.title, description: point.description || '', chapterId: point.chapterId || '', sortOrder: point.sortOrder })
+  pointVisible.value = true
+}
+
+async function deletePoint(point: KnowledgePoint) {
+  if (!selected.value) return
+  try {
+    await ElMessageBox.confirm(`确定删除知识点“${point.title}”吗？`, '删除知识点', { type: 'warning' })
+    await courseApi.deleteKnowledgePoint(selected.value.id, point.id)
+    knowledgePoints.value = knowledgePoints.value.filter((item) => item.id !== point.id)
+  } catch (error) { if (!isDialogDismissal(error)) ElMessage.error(error instanceof Error ? error.message : '知识点删除失败') }
 }
 
 async function loadAnnouncements(page: number) {
@@ -362,13 +439,21 @@ async function createAnnouncement() {
     return ElMessage.warning('请填写公告标题和内容')
   }
   try {
-    const announcement = await courseApi.createAnnouncement(selected.value.id, {
+    const input = {
       title: announcementForm.title.trim(),
       content: announcementForm.content.trim(),
-    })
+    }
+    const announcement = editingAnnouncementId.value
+      ? await courseApi.updateAnnouncement(selected.value.id, editingAnnouncementId.value, input)
+      : await courseApi.createAnnouncement(selected.value.id, input)
+    const wasEditing = Boolean(editingAnnouncementId.value)
+    editingAnnouncementId.value = null
     announcementVisible.value = false
     Object.assign(announcementForm, { title: '', content: '' })
-    if (announcementPage.value === 1) {
+    if (wasEditing) {
+      const index = announcements.value.findIndex((item) => item.id === announcement.id)
+      if (index >= 0) announcements.value[index] = announcement
+    } else if (announcementPage.value === 1) {
       announcements.value.unshift(announcement)
       announcements.value = announcements.value.slice(0, announcementPageSize)
       announcementTotal.value += 1
@@ -379,20 +464,59 @@ async function createAnnouncement() {
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '公告发布失败') }
 }
 
-async function createClass() {
-  if (!selected.value || !classForm.code.trim() || !classForm.name.trim()) return ElMessage.warning('请填写教学班代码和名称')
+function editAnnouncement(announcement: CourseAnnouncement) {
+  editingAnnouncementId.value = announcement.id
+  Object.assign(announcementForm, { title: announcement.title, content: announcement.content })
+  announcementVisible.value = true
+}
+
+async function withdrawAnnouncement(announcement: CourseAnnouncement) {
+  if (!selected.value) return
   try {
-    courseClasses.value.push(await courseApi.createClass(selected.value.id, {
+    await ElMessageBox.confirm(`确定撤回公告“${announcement.title}”吗？`, '撤回公告', { type: 'warning' })
+    await courseApi.withdrawAnnouncement(selected.value.id, announcement.id)
+    await loadAnnouncements(announcementPage.value)
+  } catch (error) { if (!isDialogDismissal(error)) ElMessage.error(error instanceof Error ? error.message : '撤回失败') }
+}
+
+async function createClass() {
+  if (!selected.value || (!editingClassId.value && !classForm.code.trim()) || !classForm.name.trim()) return ElMessage.warning('请填写教学班代码和名称')
+  try {
+    const input = {
       code: classForm.code.trim(),
       name: classForm.name.trim(),
       capacity: classForm.capacity,
       primaryClass: classForm.primaryClass,
-    }))
+    }
+    const value = editingClassId.value
+      ? await courseApi.updateClass(selected.value.id, editingClassId.value, { name: input.name, capacity: input.capacity ?? null, primaryClass: input.primaryClass, active: true })
+      : await courseApi.createClass(selected.value.id, input)
+    const index = courseClasses.value.findIndex((item) => item.id === value.id)
+    if (index >= 0) courseClasses.value[index] = value
+    else courseClasses.value.push(value)
     courseClasses.value.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
     classVisible.value = false
+    editingClassId.value = null
     Object.assign(classForm, { code: '', name: '', capacity: undefined, primaryClass: false })
     ElMessage.success('教学班已创建')
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '教学班创建失败') }
+}
+
+function editClass(courseClass: CourseClass) {
+  editingClassId.value = courseClass.id
+  Object.assign(classForm, { code: courseClass.code, name: courseClass.name, capacity: courseClass.capacity ?? undefined, primaryClass: courseClass.primaryClass })
+  classVisible.value = true
+}
+
+async function toggleClass(courseClass: CourseClass) {
+  if (!selected.value) return
+  try {
+    await ElMessageBox.confirm(`确定${courseClass.active ? '关闭' : '恢复'}教学班“${courseClass.name}”吗？`, '教学班状态', { type: 'warning' })
+    const value = await courseApi.updateClass(selected.value.id, courseClass.id, {
+      name: courseClass.name, capacity: courseClass.capacity, primaryClass: courseClass.primaryClass, active: !courseClass.active,
+    })
+    Object.assign(courseClass, value)
+  } catch (error) { if (!isDialogDismissal(error)) ElMessage.error(error instanceof Error ? error.message : '教学班更新失败') }
 }
 
 async function createInvite() {
@@ -410,6 +534,14 @@ async function createInvite() {
     await copyInvite(invite.code, false)
     ElMessage.success(`邀请码 ${invite.code} 已创建并复制`)
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '邀请码创建失败') }
+}
+
+async function revokeInvite(invite: CourseInvite) {
+  if (!selected.value) return
+  try {
+    await ElMessageBox.confirm(`确定吊销邀请码 ${invite.code} 吗？`, '吊销邀请码', { type: 'warning' })
+    Object.assign(invite, await courseApi.revokeInvite(selected.value.id, invite.id))
+  } catch (error) { if (!isDialogDismissal(error)) ElMessage.error(error instanceof Error ? error.message : '邀请码吊销失败') }
 }
 
 async function copyInvite(code: string, notify = true) {
@@ -432,6 +564,23 @@ async function removeMember(member: CourseMember) {
     memberPage.value = Math.min(memberPage.value, maxPage)
     ElMessage.success('成员已移除')
   } catch (error) { if (!isDialogDismissal(error)) ElMessage.error(error instanceof Error ? error.message : '移除成员失败') }
+}
+
+function editMember(member: CourseMember) {
+  editingMember.value = member
+  Object.assign(memberForm, { classId: member.classId || '', role: member.role === 'TA' ? 'TA' : 'STUDENT' })
+}
+
+async function saveMember() {
+  if (!selected.value || !editingMember.value) return
+  try {
+    const updated = await courseApi.updateMember(selected.value.id, editingMember.value.userId, {
+      classId: memberForm.classId || null, role: memberForm.role,
+    })
+    Object.assign(editingMember.value, updated)
+    editingMember.value = null
+    ElMessage.success('成员已更新')
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '成员更新失败') }
 }
 
 function className(classId: string | null): string {
@@ -488,13 +637,14 @@ onBeforeUnmount(() => {
               <article v-for="announcement in announcements" :key="announcement.id" class="announcement-card">
                 <div class="announcement-card__header"><h3>{{ announcement.title }}</h3><time>{{ formatDateTime(announcement.publishedAt) }}</time></div>
                 <p>{{ announcement.content }}</p>
+                <div v-if="canManageSelected" class="button-row"><el-button link @click="editAnnouncement(announcement)">修改</el-button><el-button link type="danger" @click="withdrawAnnouncement(announcement)">撤回</el-button></div>
               </article>
             </div>
             <EmptyState v-else title="暂无课程公告" description="教师或助教发布公告后，所有课程成员都能在这里看到。" />
             <el-pagination v-if="announcementTotal > announcementPageSize" v-model:current-page="announcementPage" class="member-pagination" background layout="prev, pager, next" :page-size="announcementPageSize" :total="announcementTotal" @current-change="loadAnnouncements" />
           </el-tab-pane>
           <el-tab-pane label="课程资源" name="resources">
-            <div class="tab-toolbar"><p>文件统一通过知识文档上传并进入 MinIO 与摄取流程。</p><div class="button-row"><el-button @click="loadDetails(selected.id)">刷新状态</el-button><template v-if="canManageSelected"><label class="upload-button" :class="{ disabled: documentUploading }"><input type="file" accept=".pdf,.ppt,.pptx,.docx,.md,.txt" :disabled="documentUploading" @change="uploadDocument(($event.target as HTMLInputElement).files)" />{{ documentUploading ? '上传中…' : '上传知识文档' }}</label><el-button @click="resourceVisible = true">登记外部对象标识</el-button></template></div></div>
+            <div class="tab-toolbar"><p>原始课程资料可直接上传和下载，不依赖 AI 摄取。</p><div class="button-row"><el-button @click="loadDetails(selected.id)">刷新</el-button><template v-if="canManageSelected"><label class="upload-button" :class="{ disabled: resourceUploading }"><input type="file" :disabled="resourceUploading" @change="uploadResource(($event.target as HTMLInputElement).files)" />{{ resourceUploading ? '上传中…' : '上传课程资料' }}</label><el-button @click="resourceVisible = true">登记外部对象</el-button><label class="upload-button" :class="{ disabled: documentUploading }"><input type="file" accept=".pdf,.ppt,.pptx,.docx,.md,.txt" :disabled="documentUploading" @change="uploadDocument(($event.target as HTMLInputElement).files)" />{{ documentUploading ? '上传中…' : '上传知识文档' }}</label></template></div></div>
             <el-table v-if="documents.length" :data="documents" class="document-table">
               <el-table-column prop="name" label="知识文档" min-width="200" />
               <el-table-column label="大小" width="100"><template #default="scope">{{ formatBytes(scope.row.sizeBytes) }}</template></el-table-column>
@@ -503,23 +653,24 @@ onBeforeUnmount(() => {
               <el-table-column label="操作" width="270"><template #default="scope"><el-button link @click="downloadDocument(scope.row)">下载</el-button><template v-if="canManageSelected"><el-button v-if="isDocumentJobCancelling(scope.row)" link disabled>取消中…</el-button><el-button v-else-if="mayCancelDocumentJob(scope.row)" link type="warning" @click="cancelDocumentJob(scope.row)">取消任务</el-button><el-button link @click="reindexDocument(scope.row)">重建索引</el-button><el-button link type="danger" @click="deleteDocument(scope.row)">删除</el-button></template></template></el-table-column>
             </el-table>
             <EmptyState v-else title="暂无知识文档" description="上传 PDF、PPT/PPTX、Word、Markdown 或 TXT，完成后即可用于课程问答。" />
-            <h3 class="resource-heading">外部对象元数据（不会上传或校验对象）</h3>
+            <h3 class="resource-heading">课程原始资料与外部对象</h3>
             <el-table v-if="resources.length" :data="resources">
               <el-table-column prop="name" label="名称" min-width="180" />
               <el-table-column prop="resourceType" label="类型" width="120" />
               <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
               <el-table-column prop="objectKey" label="外部对象标识" min-width="220" show-overflow-tooltip />
+              <el-table-column label="操作" width="130"><template #default="scope"><el-button link @click="downloadResource(scope.row)">下载</el-button><el-button v-if="canManageSelected" link type="danger" @click="deleteResource(scope.row)">撤下</el-button></template></el-table-column>
             </el-table>
-            <p v-else class="muted">暂无外部资源记录。</p>
+            <p v-else class="muted">暂无课程原始资料。</p>
           </el-tab-pane>
           <el-tab-pane label="章节" name="chapters">
             <div class="tab-toolbar"><p>章节用于组织资源、知识点和问答引用。</p><el-button v-if="canManageSelected" @click="chapterVisible = true">添加章节</el-button></div>
-            <el-timeline v-if="chapters.length"><el-timeline-item v-for="chapter in chapters" :key="chapter.id" :timestamp="`排序 ${chapter.sortOrder}`"><strong>{{ chapter.title }}</strong><p class="muted">{{ chapter.description }}</p></el-timeline-item></el-timeline>
+            <el-timeline v-if="chapters.length"><el-timeline-item v-for="chapter in chapters" :key="chapter.id" :timestamp="`排序 ${chapter.sortOrder}`"><strong>{{ chapter.title }}</strong><p class="muted">{{ chapter.description }}</p><div v-if="canManageSelected"><el-button link @click="editChapter(chapter)">编辑</el-button><el-button link type="danger" @click="deleteChapter(chapter)">删除</el-button></div></el-timeline-item></el-timeline>
             <EmptyState v-else title="暂无章节" />
           </el-tab-pane>
           <el-tab-pane label="知识点" name="knowledge">
             <div class="tab-toolbar"><p>知识点将用于作业关联和教学分析。</p><el-button v-if="canManageSelected" @click="pointVisible = true">添加知识点</el-button></div>
-            <div v-if="knowledgePoints.length" class="tag-cloud"><el-tag v-for="point in knowledgePoints" :key="point.id" effect="plain" size="large">{{ point.title }}</el-tag></div>
+            <div v-if="knowledgePoints.length" class="tag-cloud"><span v-for="point in knowledgePoints" :key="point.id"><el-tag effect="plain" size="large">{{ point.title }}</el-tag><template v-if="canManageSelected"><el-button link @click="editPoint(point)">编辑</el-button><el-button link type="danger" @click="deletePoint(point)">删除</el-button></template></span></div>
             <EmptyState v-else title="暂无知识点" />
           </el-tab-pane>
           <el-tab-pane v-if="canManageSelected" label="教学管理" name="teaching">
@@ -530,12 +681,14 @@ onBeforeUnmount(() => {
                 <el-table-column prop="name" label="班级名称" min-width="180" />
                 <el-table-column label="容量" width="100"><template #default="scope">{{ scope.row.capacity ?? '不限' }}</template></el-table-column>
                 <el-table-column label="类型" width="110"><template #default="scope"><el-tag v-if="scope.row.primaryClass" type="success" effect="plain">主教学班</el-tag><span v-else class="muted">普通班</span></template></el-table-column>
+                <el-table-column label="状态" width="90"><template #default="scope">{{ scope.row.active ? '开放' : '关闭' }}</template></el-table-column>
+                <el-table-column v-if="canAdministerSelected" label="操作" width="140"><template #default="scope"><el-button link @click="editClass(scope.row)">修改</el-button><el-button link :type="scope.row.active ? 'warning' : 'success'" @click="toggleClass(scope.row)">{{ scope.row.active ? '关闭' : '恢复' }}</el-button></template></el-table-column>
               </el-table>
               <EmptyState v-else title="暂无教学班" description="课程教师可以创建第一个教学班。" />
             </section>
 
             <section class="management-section">
-              <div class="tab-toolbar"><div><h3>课程邀请码</h3><p>邀请码可限定教学班、课程角色、使用次数和有效期。</p></div><el-button v-if="canAdministerSelected" type="primary" @click="inviteVisible = true">创建邀请码</el-button></div>
+              <div class="tab-toolbar"><div><h3>课程邀请码</h3><p>邀请码只授予学生加入资格，可限定教学班、使用次数和有效期。</p></div><el-button v-if="canAdministerSelected" type="primary" @click="inviteVisible = true">创建邀请码</el-button></div>
               <template v-if="canAdministerSelected">
                 <el-table v-if="invites.length" :data="invites" stripe>
                   <el-table-column label="邀请码" min-width="175"><template #default="scope"><div class="invite-code"><code>{{ scope.row.code }}</code><el-button link type="primary" @click="copyInvite(scope.row.code)">复制</el-button></div></template></el-table-column>
@@ -544,6 +697,7 @@ onBeforeUnmount(() => {
                   <el-table-column label="使用次数" width="120"><template #default="scope">{{ scope.row.maxUses == null ? `${scope.row.usedCount} / 不限` : `${scope.row.usedCount} / ${scope.row.maxUses}` }}</template></el-table-column>
                   <el-table-column label="有效期" min-width="175"><template #default="scope">{{ formatDateTime(scope.row.expiresAt) }}</template></el-table-column>
                   <el-table-column label="状态" width="90"><template #default="scope"><el-tag :type="scope.row.active ? 'success' : 'info'">{{ scope.row.active ? '有效' : '失效' }}</el-tag></template></el-table-column>
+                  <el-table-column label="操作" width="90"><template #default="scope"><el-button v-if="scope.row.active" link type="danger" @click="revokeInvite(scope.row)">吊销</el-button></template></el-table-column>
                 </el-table>
                 <EmptyState v-else title="暂无邀请码" description="创建邀请码后可复制发给学生或助教。" />
               </template>
@@ -557,7 +711,7 @@ onBeforeUnmount(() => {
                 <el-table-column label="教学班" min-width="160"><template #default="scope">{{ className(scope.row.classId) }}</template></el-table-column>
                 <el-table-column prop="role" label="课程角色" width="115" />
                 <el-table-column label="加入时间" min-width="180"><template #default="scope">{{ formatDateTime(scope.row.joinedAt) }}</template></el-table-column>
-                <el-table-column v-if="canAdministerSelected" label="操作" width="100"><template #default="scope"><el-button v-if="scope.row.userId !== auth.user?.id && scope.row.role !== 'TEACHER'" link type="danger" @click="removeMember(scope.row)">移除</el-button><span v-else class="muted">—</span></template></el-table-column>
+                <el-table-column v-if="canAdministerSelected" label="操作" width="130"><template #default="scope"><template v-if="scope.row.role !== 'TEACHER'"><el-button link @click="editMember(scope.row)">管理</el-button><el-button link type="danger" @click="removeMember(scope.row)">移除</el-button></template><span v-else class="muted">课程教师</span></template></el-table-column>
               </el-table>
               <EmptyState v-else title="暂无课程成员" />
               <el-pagination v-if="members.length > memberPageSize" v-model:current-page="memberPage" class="member-pagination" background layout="prev, pager, next" :page-size="memberPageSize" :total="members.length" />
@@ -586,19 +740,23 @@ onBeforeUnmount(() => {
       <el-form label-position="top" class="dialog-form"><div class="form-grid"><el-form-item label="显示名称"><el-input v-model="resourceForm.name" /></el-form-item><el-form-item label="外部引用类型"><el-select v-model="resourceForm.resourceType"><el-option label="链接引用" value="LINK" /><el-option label="视频引用" value="VIDEO" /><el-option label="其他外部对象" value="OTHER" /></el-select></el-form-item></div><el-form-item label="外部对象标识（非上传地址）"><el-input v-model="resourceForm.objectKey" :placeholder="selected ? `courses/${selected.id}/external/...` : 'courses/{courseId}/external/...'" /></el-form-item><el-form-item label="说明"><el-input v-model="resourceForm.description" type="textarea" /></el-form-item><el-form-item label="章节"><el-select v-model="resourceForm.chapterId" clearable><el-option v-for="chapter in chapters" :key="chapter.id" :label="chapter.title" :value="chapter.id" /></el-select></el-form-item></el-form>
       <template #footer><el-button @click="resourceVisible = false">取消</el-button><el-button type="primary" @click="createResource">仅登记元数据</el-button></template>
     </el-dialog>
-    <el-dialog v-model="chapterVisible" title="添加章节" width="min(480px, 94vw)"><el-form label-position="top"><el-form-item label="章节名称"><el-input v-model="chapterForm.title" /></el-form-item><el-form-item label="顺序"><el-input-number v-model="chapterForm.sortOrder" :min="1" /></el-form-item><el-form-item label="说明"><el-input v-model="chapterForm.description" type="textarea" /></el-form-item></el-form><template #footer><el-button type="primary" @click="createChapter">保存</el-button></template></el-dialog>
-    <el-dialog v-model="pointVisible" title="添加知识点" width="min(480px, 94vw)"><el-form label-position="top"><el-form-item label="知识点名称"><el-input v-model="pointForm.title" /></el-form-item><el-form-item label="关联章节"><el-select v-model="pointForm.chapterId" clearable><el-option v-for="chapter in chapters" :key="chapter.id" :label="chapter.title" :value="chapter.id" /></el-select></el-form-item><el-form-item label="顺序"><el-input-number v-model="pointForm.sortOrder" :min="1" /></el-form-item><el-form-item label="说明"><el-input v-model="pointForm.description" type="textarea" /></el-form-item></el-form><template #footer><el-button type="primary" @click="createPoint">保存</el-button></template></el-dialog>
-    <el-dialog v-model="classVisible" title="创建教学班" width="min(520px, 94vw)">
-      <el-form label-position="top"><div class="form-grid"><el-form-item label="教学班代码"><el-input v-model="classForm.code" placeholder="SE-01" /></el-form-item><el-form-item label="教学班名称"><el-input v-model="classForm.name" placeholder="软件工程 1 班" /></el-form-item></div><div class="form-grid"><el-form-item label="容量（可选）"><el-input-number v-model="classForm.capacity" :min="1" :max="10000" controls-position="right" style="width:100%" /></el-form-item><el-form-item label="主教学班"><el-switch v-model="classForm.primaryClass" active-text="是" inactive-text="否" /></el-form-item></div></el-form>
-      <template #footer><el-button @click="classVisible = false">取消</el-button><el-button type="primary" @click="createClass">创建</el-button></template>
+    <el-dialog v-model="chapterVisible" :title="editingChapterId ? '编辑章节' : '添加章节'" width="min(480px, 94vw)"><el-form label-position="top"><el-form-item label="章节名称"><el-input v-model="chapterForm.title" /></el-form-item><el-form-item label="顺序"><el-input-number v-model="chapterForm.sortOrder" :min="1" /></el-form-item><el-form-item label="说明"><el-input v-model="chapterForm.description" type="textarea" /></el-form-item></el-form><template #footer><el-button type="primary" @click="createChapter">保存</el-button></template></el-dialog>
+    <el-dialog v-model="pointVisible" :title="editingPointId ? '编辑知识点' : '添加知识点'" width="min(480px, 94vw)"><el-form label-position="top"><el-form-item label="知识点名称"><el-input v-model="pointForm.title" /></el-form-item><el-form-item label="关联章节"><el-select v-model="pointForm.chapterId" clearable><el-option v-for="chapter in chapters" :key="chapter.id" :label="chapter.title" :value="chapter.id" /></el-select></el-form-item><el-form-item label="顺序"><el-input-number v-model="pointForm.sortOrder" :min="1" /></el-form-item><el-form-item label="说明"><el-input v-model="pointForm.description" type="textarea" /></el-form-item></el-form><template #footer><el-button type="primary" @click="createPoint">保存</el-button></template></el-dialog>
+    <el-dialog v-model="classVisible" :title="editingClassId ? '修改教学班' : '创建教学班'" width="min(520px, 94vw)">
+      <el-form label-position="top"><div class="form-grid"><el-form-item label="教学班代码"><el-input v-model="classForm.code" :disabled="Boolean(editingClassId)" placeholder="SE-01" /></el-form-item><el-form-item label="教学班名称"><el-input v-model="classForm.name" placeholder="软件工程 1 班" /></el-form-item></div><div class="form-grid"><el-form-item label="容量（可选）"><el-input-number v-model="classForm.capacity" :min="1" :max="10000" controls-position="right" style="width:100%" /></el-form-item><el-form-item label="主教学班"><el-switch v-model="classForm.primaryClass" active-text="是" inactive-text="否" /></el-form-item></div></el-form>
+      <template #footer><el-button @click="classVisible = false">取消</el-button><el-button type="primary" @click="createClass">保存</el-button></template>
     </el-dialog>
     <el-dialog v-model="inviteVisible" title="创建课程邀请码" width="min(540px, 94vw)">
-      <el-form label-position="top"><div class="form-grid"><el-form-item label="加入教学班"><el-select v-model="inviteForm.classId" clearable placeholder="不指定教学班" style="width:100%"><el-option v-for="item in courseClasses" :key="item.id" :label="`${item.name} (${item.code})`" :value="item.id" /></el-select></el-form-item><el-form-item label="加入角色"><el-select v-model="inviteForm.memberRole" style="width:100%"><el-option label="学生" value="STUDENT" /><el-option label="助教" value="TA" /></el-select></el-form-item></div><div class="form-grid"><el-form-item label="最大使用次数"><el-input-number v-model="inviteForm.maxUses" :min="1" :max="10000" placeholder="不限" controls-position="right" style="width:100%" /></el-form-item><el-form-item label="失效时间"><el-date-picker v-model="inviteForm.expiresAt" type="datetime" placeholder="永不自动失效" style="width:100%" /></el-form-item></div></el-form>
+      <el-form label-position="top"><div class="form-grid"><el-form-item label="加入教学班"><el-select v-model="inviteForm.classId" clearable placeholder="不指定教学班" style="width:100%"><el-option v-for="item in courseClasses.filter((item) => item.active)" :key="item.id" :label="`${item.name} (${item.code})`" :value="item.id" /></el-select></el-form-item><el-form-item label="加入角色"><el-input value="学生" disabled /></el-form-item></div><div class="form-grid"><el-form-item label="最大使用次数"><el-input-number v-model="inviteForm.maxUses" :min="1" :max="10000" placeholder="不限" controls-position="right" style="width:100%" /></el-form-item><el-form-item label="失效时间"><el-date-picker v-model="inviteForm.expiresAt" type="datetime" placeholder="永不自动失效" style="width:100%" /></el-form-item></div></el-form>
       <template #footer><el-button @click="inviteVisible = false">取消</el-button><el-button type="primary" @click="createInvite">生成并复制</el-button></template>
     </el-dialog>
-    <el-dialog v-model="announcementVisible" title="发布课程公告" width="min(600px, 94vw)">
+    <el-dialog v-model="announcementVisible" :title="editingAnnouncementId ? '修改课程公告' : '发布课程公告'" width="min(600px, 94vw)">
       <el-form label-position="top"><el-form-item label="标题"><el-input v-model="announcementForm.title" maxlength="200" show-word-limit /></el-form-item><el-form-item label="内容"><el-input v-model="announcementForm.content" type="textarea" :rows="8" maxlength="20000" show-word-limit /></el-form-item></el-form>
-      <template #footer><el-button @click="announcementVisible = false">取消</el-button><el-button type="primary" @click="createAnnouncement">发布</el-button></template>
+      <template #footer><el-button @click="announcementVisible = false">取消</el-button><el-button type="primary" @click="createAnnouncement">保存</el-button></template>
+    </el-dialog>
+    <el-dialog :model-value="Boolean(editingMember)" title="管理课程成员" width="min(480px, 94vw)" @close="editingMember = null">
+      <el-form label-position="top"><el-form-item label="课程角色"><el-select v-model="memberForm.role"><el-option label="学生" value="STUDENT" /><el-option label="助教" value="TA" /></el-select></el-form-item><el-form-item label="教学班"><el-select v-model="memberForm.classId" clearable placeholder="未分班"><el-option v-for="item in courseClasses.filter((item) => item.active)" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item></el-form>
+      <template #footer><el-button @click="editingMember = null">取消</el-button><el-button type="primary" @click="saveMember">保存</el-button></template>
     </el-dialog>
   </div>
 </template>

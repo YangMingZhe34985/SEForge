@@ -6,4 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CourseChapterRepository extends JpaRepository<CourseChapter, Long> {
     List<CourseChapter> findAllByCourseIdOrderBySortOrderAscIdAsc(Long courseId);
+    boolean existsByParentId(Long parentId);
 }

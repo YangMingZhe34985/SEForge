@@ -9,6 +9,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -43,5 +45,19 @@ public class CourseAnnouncementController {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiEnvelope.success(announcements.create(
                         courseId, principal.userId(), request)));
+    }
+
+    @PutMapping("/{announcementId}")
+    public ApiEnvelope<CourseAnnouncementView> update(@PathVariable Long courseId,
+            @PathVariable Long announcementId, @Valid @RequestBody CreateAnnouncementRequest request,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiEnvelope.success(announcements.update(courseId, announcementId, principal.userId(), request));
+    }
+
+    @DeleteMapping("/{announcementId}")
+    public ApiEnvelope<Void> withdraw(@PathVariable Long courseId, @PathVariable Long announcementId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        announcements.withdraw(courseId, announcementId, principal.userId());
+        return ApiEnvelope.success("Announcement withdrawn", null);
     }
 }

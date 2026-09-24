@@ -4,6 +4,7 @@ import com.ustb.seforge.common.api.ApiEnvelope;
 import com.ustb.seforge.common.api.PageResponse;
 import com.ustb.seforge.common.audit.AuditService;
 import com.ustb.seforge.course.service.CourseService;
+import com.ustb.seforge.course.domain.CourseStatus;
 import com.ustb.seforge.identity.security.UserPrincipal;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -34,8 +35,11 @@ public class CourseController {
     public ApiEnvelope<PageResponse<CourseSummaryView>> list(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return ApiEnvelope.success(courseService.listCourses(principal.userId(), page, size));
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) CourseStatus status,
+            @RequestParam(required = false) Long semesterId) {
+        return ApiEnvelope.success(courseService.listCourses(principal.userId(), page, size, search, status, semesterId));
     }
 
     @PostMapping

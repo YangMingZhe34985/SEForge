@@ -11,6 +11,7 @@ public record CourseSummaryView(
         String description,
         Long semesterId,
         String semesterName,
+        Long ownerId,
         CourseStatus status,
         CourseMemberRole role,
         long memberCount,

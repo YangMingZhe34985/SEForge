@@ -13,6 +13,7 @@ public interface CourseMemberRepository extends JpaRepository<CourseMember, Long
     Optional<CourseMember> findByCourseIdAndUserIdAndStatus(
             Long courseId, Long userId, CourseMemberStatus status);
     List<CourseMember> findAllByCourseIdAndStatusOrderByJoinedAtAsc(Long courseId, CourseMemberStatus status);
+    List<CourseMember> findAllByUserIdAndStatus(Long userId, CourseMemberStatus status);
     long countByCourseIdAndStatus(Long courseId, CourseMemberStatus status);
     long countByCourseIdAndClassIdAndStatus(
             Long courseId, Long classId, CourseMemberStatus status);
