@@ -1,0 +1,27 @@
+{
+  "pass": true,
+  "results": [
+    {
+      "fault": "worker SIGKILL",
+      "jobId": "13",
+      "status": "COMPLETED",
+      "attempts": 2
+    },
+    {
+      "fault": "Redis stop/start + disposable stream loss",
+      "jobId": "14",
+      "status": "COMPLETED",
+      "attempts": 1
+    },
+    {
+      "fault": "AI HTTP 503",
+      "failedJobId": "15",
+      "failedStatus": "DEAD_LETTER",
+      "retryJobId": "16",
+      "retryStatus": "COMPLETED"
+    }
+  ],
+  "unfinishedJobs": 0,
+  "terminalStatesStable": true,
+  "transportScope": "seforge-p6-verify"
+}

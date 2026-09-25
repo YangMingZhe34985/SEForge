@@ -1,0 +1,86 @@
+[
+  {
+    "service": "ai-egress",
+    "name": "seforge-p6-verify-ai-egress-1",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "api",
+    "name": "seforge-p6-verify-api-1",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "etcd",
+    "name": "seforge-p6-verify-etcd-1",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "frontend",
+    "name": "seforge-p6-verify-frontend-1",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "milvus",
+    "name": "seforge-p6-verify-milvus-1",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "minio",
+    "name": "seforge-p6-verify-minio-1",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "mysql",
+    "name": "seforge-p6-verify-mysql-1",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "provider-stub",
+    "name": "seforge-p6-verify-provider-stub-1",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "redis",
+    "name": "seforge-p6-verify-redis-1",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "worker",
+    "name": "seforge-p6-verify-worker-1",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "worker",
+    "name": "seforge-p6-verify-worker-2",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "worker",
+    "name": "seforge-p6-verify-worker-3",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "worker",
+    "name": "seforge-p6-verify-worker-4",
+    "state": "running",
+    "health": "healthy"
+  },
+  {
+    "service": "worker",
+    "name": "seforge-p6-verify-worker-5",
+    "state": "running",
+    "health": "healthy"
+  }
+]

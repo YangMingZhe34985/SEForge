@@ -1,5 +1,15 @@
 # SEForge 混合负载门禁
 
+## Phase 6 正式门禁
+
+本轮权威运行器是 `docs/release/verify.mjs`，使用隔离生产 Compose、HTTPS、Secure Cookie、真实 Redis Session / CSRF，依次运行 `configure → build → up → seed → inspect → load → recovery → backup`。只可用于专用 `seforge-p6-verify` / `seforge-p6-restore` 项目；不要在业务环境执行 seed。详见 `docs/phase-6-summary.md` 和 `docs/operations.md`。
+
+`load` 使用 200 个独立认证会话、50 个传统 API 用户、20 个 POST-SSE 和 5 个真实解析/Embedding/Milvus 摄取任务，并记录 Provider 实测并发。机器可读结果为 `backend/target/phase6-release/mixed-load-results.json`；该目录还含敏感测试凭据和备份，不可整体提交。
+
+下面的旧 k6 方案保留用于兼容性冒烟：其默认 5 个统计任务**不是重任务**，不能单独作为本轮发布验收；不得关闭 Secure Cookie、CSRF 或 RBAC 来通过门禁。真实供应商 TTFT 未测时必须标为 UNVERIFIED。
+
+## 既有 k6 冒烟工具
+
 `mixed-load.js` 使用标准 k6 HTTP 能力执行一个有状态的发布门禁。默认并发由 125 个空闲在线会话、50 个活跃 API 用户、20 路课程问答 SSE 和 5 个异步任务组成，峰值合计 200 个已认证会话。
 
 脚本会校验真实 HTTP 状态、`ApiEnvelope.code`、SSE 类型/增量/引用/唯一终态以及后台任务最终状态。账号、课程或 worker 配置错误会使测试失败，不会把 `401`、`403`、错误终态或超时记作成功。
@@ -12,7 +22,7 @@
 - 准备学生测试账号并加入该课程。单账号可用于小规模冒烟；正式门禁建议创建 `loadtest-1` 至 `loadtest-200` 的同密码账号池。
 - 准备一个属于该课程的教师/助教账号，用于提交 5 个统计快照任务。
 - 启动 API 与 worker，并将 DeepSeek/DashScope 兼容地址指向可访问的聊天与 Embedding Stub Provider；Stub 必须返回正常的流式答案和查询向量。负载测试不应调用计费的生产模型。
-- 若通过容器内的明文 HTTP 运行，测试环境需设置 `SESSION_COOKIE_SECURE=false`；正式 HTTPS 环境保持 `true`。
+- 使用可信 HTTPS 入口并保持 `SESSION_COOKIE_SECURE=true`；明文 HTTP 的原默认值不适用于生产门禁。
 
 必须提供以下环境变量：
 

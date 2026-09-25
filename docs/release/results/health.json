@@ -1,0 +1,6 @@
+{
+  "path": "/actuator/health/readiness",
+  "status": 200,
+  "contentType": "application/vnd.spring-boot.actuator.v3+json",
+  "sample": "{\"status\":\"UP\"}"
+}

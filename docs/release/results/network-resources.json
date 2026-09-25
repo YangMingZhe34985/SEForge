@@ -1,0 +1,5 @@
+{
+  "workerCount": 5,
+  "workersInternalOnly": true,
+  "allServicesResourceLimited": true
+}

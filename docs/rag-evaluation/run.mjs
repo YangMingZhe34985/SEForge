@@ -10,6 +10,8 @@ const baseUrl = required(options.baseUrl || process.env.SEFORGE_RAG_EVAL_BASE_UR
 const courseId = required(options.courseId || process.env.SEFORGE_RAG_EVAL_COURSE_ID, '--course-id')
 const identifier = required(options.identifier || process.env.SEFORGE_RAG_EVAL_IDENTIFIER, '--identifier')
 const password = required(options.password || process.env.SEFORGE_RAG_EVAL_PASSWORD, '--password')
+const portal = options.portal || process.env.SEFORGE_RAG_EVAL_PORTAL || 'TEACHER'
+if (!['STUDENT', 'TEACHER'].includes(portal)) throw new Error('--portal must be STUDENT or TEACHER')
 const goldenPath = path.resolve(required(options.golden || process.env.SEFORGE_RAG_EVAL_GOLDEN, '--golden'))
 const outputPath = path.resolve(options.output || process.env.SEFORGE_RAG_EVAL_OUTPUT || 'rag-evaluation-results.jsonl')
 const thresholds = {
@@ -23,7 +25,8 @@ validateGoldenSet(goldenSet)
 
 const client = new SessionClient(baseUrl)
 await client.initializeCsrf()
-await client.mutate('/auth/login', { identifier, password })
+await client.mutate('/auth/login', { identifier, password, portal })
+await client.initializeCsrf() // Login rotates the session; do not reuse the anonymous token.
 
 const results = []
 try {

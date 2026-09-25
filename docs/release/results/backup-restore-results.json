@@ -1,0 +1,71 @@
+{
+  "pass": true,
+  "backupStartedAt": "2026-09-25T08:25:47.793Z",
+  "backupDurationMs": 3598,
+  "restoreDurationMs": 135757,
+  "rpoMs": 0,
+  "rpoBasis": "Quiesced writers; complete SQL data and object SHA-256 manifests match",
+  "sqlSha256": "c5bbf6ec46c9c08a9a808f9551531f8993a3e03d6642b29a2fbf7039abf7a282",
+  "objects": [
+    {
+      "key": "courses/600/knowledge/10ecdfd1-187f-4465-8c2a-ad523c9f429c.txt",
+      "sha256": "80a28df229e24500d67e02bdf91804a8c02ace15826c0f79c68c9d95281c1511"
+    },
+    {
+      "key": "courses/600/knowledge/2625078d-21eb-4071-b516-d10c6e089d46.txt",
+      "sha256": "27a9a344dc6543402b41f7c04842c6a609d24fe4cb6f446bc6545d6ce9404a6e"
+    },
+    {
+      "key": "courses/600/knowledge/2dde0fc4-312b-4015-9c22-a082860ad18a.txt",
+      "sha256": "bb9fd9c9bc7f26df344b338118e3e8a85263d6320be29091c81bacb70213d797"
+    },
+    {
+      "key": "courses/600/knowledge/5833ce5a-e82c-4aa9-90af-8a567204d35d.txt",
+      "sha256": "195856750c5da5c9aa2ce40f2d839dafc220e3397eda6cb858f9a802a052914d"
+    },
+    {
+      "key": "courses/600/knowledge/671b6c4f-413c-4a14-89f6-8cbb3edc2511.txt",
+      "sha256": "db1ae3635ffcf8e961e4566b8c3e1940e423380cd67dd954a70f200232038c14"
+    },
+    {
+      "key": "courses/600/knowledge/72e63e34-86d8-4b39-a7cf-22a08884171c.txt",
+      "sha256": "3d6fe3e580679e060d4ac81ef527b8f2461631b381bf10639f6d1a45bfa5a59e"
+    },
+    {
+      "key": "courses/600/knowledge/936cc337-83dc-437f-9b86-1c0207307634.txt",
+      "sha256": "a92f684b4db78bbf9e19ed7d4ed6513a4b4987972ee6a658e79b706f49254e47"
+    },
+    {
+      "key": "courses/600/knowledge/b480cdb5-5445-4927-a114-5d6aeca56c34.txt",
+      "sha256": "c0d2b4c681621aa6a4451e90a736a482598a090f718e1c03be437aed30773ecf"
+    },
+    {
+      "key": "courses/600/knowledge/b8315f6d-a118-4d55-a7fd-332f37d20426.txt",
+      "sha256": "a1a58b01a2cea3ea72872758c257ec5dd12341174b78b11710f182a2587f2ffe"
+    },
+    {
+      "key": "courses/600/knowledge/c4753edd-92c9-41bd-b6a4-7efcd2241ac8.txt",
+      "sha256": "5687cd38aebda5db50d92d485df9e251defce6114561879bcb6ff03095b52a49"
+    },
+    {
+      "key": "courses/600/knowledge/e9a981d7-012c-4a6b-a34a-f296faa08796.txt",
+      "sha256": "7f825ccec114079eecca8bac4429d9ba1f1509c56950d51b0a863df8351fb7cb"
+    },
+    {
+      "key": "courses/600/knowledge/eeb5aa2a-7aa8-4028-900d-33c129cefc70.txt",
+      "sha256": "6d8a59a0ebc55233b0742a29a273878260fd5754bed2163a1cbd7d29d61344ee"
+    },
+    {
+      "key": "courses/600/knowledge/f3c6bd32-620f-46d6-9010-cfd4b201ac92.txt",
+      "sha256": "ca511ff2ea3c2311d9800c54b42a6b5a4a6ab0c107dd2b51788eade56324b831"
+    },
+    {
+      "key": "courses/600/knowledge/ffbca8c0-2c35-40ed-9d96-0e23f4eec332.txt",
+      "sha256": "3b81cb67c3bdddee77a115cffb7cd80f148546363cf63a387f001b279b559410"
+    }
+  ],
+  "configurationDecrypted": true,
+  "restoredDocuments": 13,
+  "indexRecovery": "Reindexed all documents into fresh real Milvus; authenticated Course QA citation and unique done verified",
+  "restoreProject": "seforge-p6-restore"
+}

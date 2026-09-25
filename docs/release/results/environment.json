@@ -1,0 +1,22 @@
+{
+  "date": "2026-09-25",
+  "host": "Windows / Docker Desktop Linux containers",
+  "dockerServerVersion": "29.8.0",
+  "dockerCpus": 24,
+  "dockerMemoryBytes": 16619589632,
+  "java": "21.0.7",
+  "mavenImage": "maven:3.9.9-eclipse-temurin-21-alpine",
+  "baseCommit": "aae6e27f5fef73945719d4595eb6bbba6a090dba",
+  "includesUncommittedChanges": true,
+  "composeProject": "seforge-p6-verify",
+  "restoreProject": "seforge-p6-restore",
+  "workerReplicas": 5,
+  "workerReadBatchSize": 1,
+  "aiProvider": "controlled HTTP stub; real providers UNVERIFIED",
+  "tls": "locally trusted test certificate; Secure cookies enabled",
+  "applicationImages": "seforge/*:phase6-verify",
+  "optionalSonarInReleaseStack": false,
+  "sonarRegression": "real container in PhaseFiveReviewIntegrationTest",
+  "disposableStacksStoppedAfterVerification": true,
+  "volumesRetained": true
+}

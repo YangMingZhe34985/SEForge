@@ -1,0 +1,194 @@
+{
+  "startedAt": "2026-09-25T08:17:54.832Z",
+  "durationMs": 121849,
+  "authenticatedSessions": 200,
+  "activeApiUsers": 50,
+  "requestedStreams": 20,
+  "clientPeakStreams": 20,
+  "provider": {
+    "mode": "normal",
+    "activeStreams": 0,
+    "peakStreams": 20,
+    "activeEmbeddings": 0,
+    "peakEmbeddings": 13,
+    "activeHeavyEmbeddings": 0,
+    "peakHeavyEmbeddings": 5
+  },
+  "traditional": {
+    "requests": 5811,
+    "errors": 0,
+    "errorRate": 0,
+    "p95Ms": 46.55979999998817
+  },
+  "streams": [
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 37185.667299999994
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 37188.0136
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 37186.180799999995
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 37185.8895
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 37186.1058
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 37188.856700000004
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 37186.26980000001
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 37186.5534
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 40632.10859999999
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 40874.551
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 40906.1291
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 40913.4177
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 40911.6644
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 40911.5867
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 41262.894700000004
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 41278.5202
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 43656.3333
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 43832.92140000001
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 43838.40260000001
+    },
+    {
+      "status": 200,
+      "terminalCount": 1,
+      "terminal": "done",
+      "citation": true,
+      "durationMs": 43840.6937
+    }
+  ],
+  "jobs": [
+    {
+      "id": "8",
+      "status": "COMPLETED",
+      "documentId": "7"
+    },
+    {
+      "id": "9",
+      "status": "COMPLETED",
+      "documentId": "8"
+    },
+    {
+      "id": "10",
+      "status": "COMPLETED",
+      "documentId": "9"
+    },
+    {
+      "id": "11",
+      "status": "COMPLETED",
+      "documentId": "10"
+    },
+    {
+      "id": "12",
+      "status": "COMPLETED",
+      "documentId": "11"
+    }
+  ],
+  "realProviderTtft": "UNVERIFIED",
+  "pass": true
+}

@@ -1,0 +1,625 @@
+{
+  "results": [
+    {
+      "course": "software-engineering",
+      "questions": [
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-1-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-1-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-1-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-1-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-2-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-2-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-2-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-2-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-3-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-3-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-3-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-3-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-4-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-4-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-4-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-4-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-5-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-5-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-5-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-5-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-6-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-6-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-6-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-6-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-7-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-7-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-7-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-7-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-8-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-8-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-8-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-8-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-9-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-9-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-9-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-9-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-10-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-10-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-10-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "software-engineering-10-4",
+          "citationHit": true
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "software-engineering-unsupported-1",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "software-engineering-unsupported-2",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "software-engineering-unsupported-3",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "software-engineering-unsupported-4",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "software-engineering-unsupported-5",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "software-engineering-unsupported-6",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "software-engineering-unsupported-7",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "software-engineering-unsupported-8",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "software-engineering-unsupported-9",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "software-engineering-unsupported-10",
+          "citationHit": false
+        }
+      ],
+      "citationHitRate": 1,
+      "unsupportedRefusalRate": 1,
+      "recallAt5": 1,
+      "unsupported": 10,
+      "supported": 40
+    },
+    {
+      "course": "database-foundations",
+      "questions": [
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-1-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-1-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-1-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-1-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-2-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-2-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-2-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-2-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-3-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-3-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-3-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-3-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-4-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-4-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-4-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-4-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-5-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-5-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-5-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-5-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-6-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-6-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-6-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-6-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-7-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-7-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-7-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-7-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-8-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-8-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-8-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-8-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-9-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-9-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-9-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-9-4",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-10-1",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-10-2",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-10-3",
+          "citationHit": true
+        },
+        {
+          "refused": false,
+          "recallHit": true,
+          "id": "database-foundations-10-4",
+          "citationHit": true
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "database-foundations-unsupported-1",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "database-foundations-unsupported-2",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "database-foundations-unsupported-3",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "database-foundations-unsupported-4",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "database-foundations-unsupported-5",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "database-foundations-unsupported-6",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "database-foundations-unsupported-7",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "database-foundations-unsupported-8",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "database-foundations-unsupported-9",
+          "citationHit": false
+        },
+        {
+          "refused": true,
+          "recallHit": false,
+          "id": "database-foundations-unsupported-10",
+          "citationHit": false
+        }
+      ],
+      "citationHitRate": 1,
+      "unsupportedRefusalRate": 1,
+      "recallAt5": 1,
+      "unsupported": 10,
+      "supported": 40
+    }
+  ],
+  "mode": "controlled HTTP embedding/chat; real MySQL/MinIO/Milvus; NOT semantic-quality evaluation"
+}

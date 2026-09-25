@@ -1,0 +1,8 @@
+{
+  "secureCookie": true,
+  "csrf": true,
+  "studentMetricsForbidden": true,
+  "studentDashboardForbidden": true,
+  "csp": true,
+  "tls": true
+}

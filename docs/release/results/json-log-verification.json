@@ -1,0 +1,14 @@
+{
+  "pass": true,
+  "services": [
+    "seforge-p6-verify-api-1",
+    "seforge-p6-verify-worker-1",
+    "seforge-p6-verify-worker-2",
+    "seforge-p6-verify-worker-3",
+    "seforge-p6-verify-worker-4",
+    "seforge-p6-verify-worker-5"
+  ],
+  "parsedEvents": 1664,
+  "credentialsAbsent": true,
+  "freeFormMessagesSuppressed": true
+}

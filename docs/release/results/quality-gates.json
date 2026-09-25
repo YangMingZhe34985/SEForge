@@ -1,0 +1,48 @@
+{
+  "date": "2026-09-25",
+  "backend": {
+    "command": "mvn -Dapi.version=1.44 clean verify",
+    "result": "BUILD SUCCESS",
+    "finishedAt": "2026-09-25T08:35:35Z",
+    "durationSeconds": 867,
+    "tests": 200,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "reports": "backend/target/phase6-final/surefire-reports"
+  },
+  "quotaSupplement": {
+    "command": "mvn -Dapi.version=1.44 -Dtest=KnowledgeDocumentServiceTest test",
+    "isolatedBuildDirectory": true,
+    "result": "BUILD SUCCESS",
+    "tests": 6,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "overlapWithFullSuite": 5,
+    "covers": ["exact course byte limit", "one byte over quota rejected before storage/job write"]
+  },
+  "frontend": {
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "vitestFiles": 11,
+    "vitestTests": 33,
+    "build": "PASS",
+    "playwrightPassed": 18,
+    "playwrightSkipped": 2,
+    "skippedReason": "Separate Phase 1-E real-environment browser tests not configured",
+    "browserApiMode": "controlled routes; real backend verified separately"
+  },
+  "coreIntegrationRegression": {
+    "PhaseOneAuthorizationIntegrationTest": 2,
+    "JobRuntimeIntegrationTest": 4,
+    "PhaseThreeRuntimeIntegrationTest": 8,
+    "PhaseFourAssignmentIntegrationTest": 1,
+    "PhaseFiveReviewIntegrationTest": 6,
+    "AnalyticsProjectionIntegrationTest": 1,
+    "ApiRateLimitRedisIntegrationTest": 1
+  },
+  "engineeringVerification": "PASS",
+  "userAcceptance": "PENDING",
+  "roadmapCompletion": "NOT USER-ACCEPTED"
+}

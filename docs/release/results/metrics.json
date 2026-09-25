@@ -1,0 +1,6 @@
+{
+  "path": "/actuator/prometheus",
+  "status": 200,
+  "contentType": "text/plain;version=0.0.4;charset=utf-8",
+  "sample": "# HELP application_ready_time_seconds Time taken for the application to be ready to service requests\n# TYPE application_ready_time_seconds gauge\napplication_ready_time_seconds{main_application_class=\"com.ustb.seforge.SEForgeApplication\"} 39.034\n# HELP application_started_time_seconds Time taken to s"
+}
