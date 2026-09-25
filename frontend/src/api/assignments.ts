@@ -50,14 +50,18 @@ export const assignmentApi = {
     apiRequest<TeacherSubmission[]>({ url: `/assignments/${assignmentId}/submissions` }),
   mySubmission: (assignmentId: string) =>
     apiRequest<Submission | null>({ url: `/assignments/${assignmentId}/submissions/me` }),
-  saveDraft: (assignmentId: string, answers: SubmissionAnswerInput[]) =>
-    apiRequest<Submission>({ url: `/assignments/${assignmentId}/submissions/draft`, method: 'PUT', data: { answers } }),
-  submit: (assignmentId: string, answers: SubmissionAnswerInput[]) =>
-    apiRequest<Submission>({ url: `/assignments/${assignmentId}/submissions`, method: 'POST', data: { answers } }),
-  uploadAttachment: (assignmentId: string, questionId: string, file: File) => {
+  saveDraft: (assignmentId: string, answers: SubmissionAnswerInput[], expectedAttempt?: number, startNextAttempt = false) =>
+    apiRequest<Submission>({ url: `/assignments/${assignmentId}/submissions/draft`, method: 'PUT',
+      data: { answers, expectedAttempt, startNextAttempt } }),
+  submit: (assignmentId: string, answers: SubmissionAnswerInput[], submissionKey?: string, expectedAttempt?: number) =>
+    apiRequest<Submission>({ url: `/assignments/${assignmentId}/submissions`, method: 'POST', data: { answers, submissionKey, expectedAttempt } }),
+  uploadAttachment: (assignmentId: string, questionId: string, file: File,
+    expectedAttempt?: number, startNextAttempt = false) => {
     const data = new FormData()
     data.append('questionId', questionId)
     data.append('file', file)
+    if (expectedAttempt !== undefined) data.append('expectedAttempt', String(expectedAttempt))
+    data.append('startNextAttempt', String(startNextAttempt))
     return apiRequest<SubmissionAttachment>({
       url: `/assignments/${assignmentId}/submissions/attachments`,
       method: 'POST',

@@ -29,8 +29,13 @@ public class AiServiceFactory {
                 .streamingChatModel(endpoint.streamingChatModel());
         if (memoryProvider != null) builder.chatMemoryProvider(memoryProvider);
         if (authorizedTools != null && authorizedTools.length > 0) {
-            builder.tools(Arrays.asList(authorizedTools))
-                    .maxSequentialToolsInvocations(8);
+            if (authorizedTools.length == 1 && authorizedTools[0] instanceof
+                    com.ustb.seforge.ai.tool.AuthorizedToolRuntime.Session session) {
+                builder.tools(session.executors());
+            } else {
+                builder.tools(Arrays.asList(authorizedTools));
+            }
+            builder.maxSequentialToolsInvocations(8);
         }
         return builder.build();
     }

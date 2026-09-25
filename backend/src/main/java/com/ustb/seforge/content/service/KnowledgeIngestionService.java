@@ -39,11 +39,13 @@ public class KnowledgeIngestionService implements JobHandler {
     private final TokenCountEstimator tokenEstimator;
     private final DocumentSplitter splitter;
     private final AsyncJobService jobs;
+    private final CourseIndexWriteService indexWrites;
 
     public KnowledgeIngestionService(IngestionPersistence persistence, DocumentParserService parser,
                                      ObjectStorage storage, EmbeddingProvider embeddings,
                                      VectorIndex vectors, ObjectMapper objectMapper,
-                                     TokenCountEstimator tokenEstimator, AsyncJobService jobs) {
+                                     TokenCountEstimator tokenEstimator, AsyncJobService jobs,
+                                     CourseIndexWriteService indexWrites) {
         this.persistence = persistence;
         this.parser = parser;
         this.storage = storage;
@@ -52,6 +54,7 @@ public class KnowledgeIngestionService implements JobHandler {
         this.objectMapper = objectMapper;
         this.tokenEstimator = tokenEstimator;
         this.jobs = jobs;
+        this.indexWrites = indexWrites;
         this.splitter = DocumentSplitters.recursive(700, 100, tokenEstimator);
     }
 
@@ -94,15 +97,19 @@ public class KnowledgeIngestionService implements JobHandler {
                         vectorId, json(metadata.toMap())));
             }
             newVectorIds = List.copyOf(vectorIds);
-            vectors.addAll(context.embeddingVersion(), context.courseId(), vectorIds, vectorsForSegments, segments);
-            checkpoint(job);
             String result = json(Map.of("documentId", context.documentId(), "chunks", chunks.size(),
                     "embeddingVersion", context.embeddingVersion()));
             AtomicReference<List<String>> staleVectorIds = new AtomicReference<>(List.of());
-            jobs.completeAtomically(job.id(), job.workerId(), result, () -> {
-                staleVectorIds.set(persistence.replaceChunks(
-                        context.documentId(), context.embeddingVersion(), chunks));
-                persistence.complete(job.id(), context.documentId(), context.embeddingVersion());
+            indexWrites.execute(context.courseId(), () -> {
+                persistence.requireLive(context.documentId());
+                checkpoint(job);
+                vectors.addAll(context.embeddingVersion(), context.courseId(), vectorIds, vectorsForSegments, segments);
+                jobs.completeAtomically(job.id(), job.workerId(), result, () -> {
+                    staleVectorIds.set(persistence.replaceChunks(
+                            context.documentId(), context.embeddingVersion(), chunks));
+                    persistence.complete(job.id(), context.documentId(), context.embeddingVersion());
+                });
+                return null;
             });
             committed = true;
             try {
@@ -145,7 +152,7 @@ public class KnowledgeIngestionService implements JobHandler {
                     .put("section", section.section() == null ? "" : section.section())
                     .put("parserVersion", context.parserVersion())
                     .put("embeddingVersion", context.embeddingVersion());
-            if (context.chapterId() != null) metadata.put("chapterId", context.chapterId());
+            metadata.put("chapterId", context.chapterId() == null ? 0L : context.chapterId());
             result.addAll(splitter.split(Document.from(section.text(), metadata)));
         }
         return result;

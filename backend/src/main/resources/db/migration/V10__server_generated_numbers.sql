@@ -1,0 +1,7 @@
+CREATE TABLE number_allocations (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    kind VARCHAR(8) NOT NULL,
+    version BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP(6) NOT NULL,
+    updated_at TIMESTAMP(6) NOT NULL
+);

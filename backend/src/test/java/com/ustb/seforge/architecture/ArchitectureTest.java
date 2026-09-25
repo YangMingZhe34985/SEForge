@@ -11,6 +11,14 @@ class ArchitectureTest {
     private final JavaClasses classes = new ClassFileImporter().importPackages("com.ustb.seforge");
 
     @Test
+    void modelClientsStayInsideAiInfrastructure() {
+        noClasses().that().resideOutsideOfPackage("..ai.infrastructure..")
+                .should().dependOnClassesThat().haveNameMatching(
+                        "dev\\.langchain4j\\.model\\.openai\\.OpenAi(ChatModel|StreamingChatModel|EmbeddingModel).*" )
+                .check(classes);
+    }
+
+    @Test
     void controllersDoNotAccessRepositories() {
         ArchRule rule = noClasses().that().haveSimpleNameEndingWith("Controller")
                 .should().dependOnClassesThat().resideInAnyPackage("..repository..");

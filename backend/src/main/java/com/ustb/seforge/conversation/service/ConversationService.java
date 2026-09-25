@@ -140,6 +140,7 @@ public class ConversationService {
 
     @Transactional(readOnly = true)
     public Conversation require(Long courseId, Long conversationId, Long ownerId) {
+        access.requireMember(courseId, ownerId);
         return conversations.findByIdAndOwnerIdAndCourseId(conversationId, ownerId, courseId)
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Conversation not found"));
     }

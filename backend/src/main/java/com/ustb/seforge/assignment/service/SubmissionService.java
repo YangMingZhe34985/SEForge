@@ -72,6 +72,14 @@ public class SubmissionService {
         CourseMember member = authorization.requireStudent(assignment, userId);
         Instant now = Instant.now();
         Deadline deadline = requireAccepting(assignment, userId, now);
+        requireExpectedAttempt(assignmentId, userId, request.expectedAttempt());
+        Submission latest = submissions.findFirstByAssignmentIdAndUserIdOrderByAttemptNoDesc(assignmentId, userId)
+                .orElse(null);
+        if (latest != null && latest.getStatus() != SubmissionStatus.DRAFT
+                && !Boolean.TRUE.equals(request.startNextAttempt())) {
+            throw new AppException(ErrorCode.CONFLICT,
+                    "The previous attempt is submitted; start a new attempt explicitly");
+        }
         Submission draft = requireOrCreateDraft(assignment, member, userId);
         upsertAnswers(assignment, draft, request.answers());
         return view(draft);
@@ -81,13 +89,32 @@ public class SubmissionService {
     public SubmissionView submit(Long assignmentId, Long userId, SaveSubmissionRequest request) {
         Assignment assignment = lockAssignment(assignmentId);
         CourseMember member = authorization.requireStudent(assignment, userId);
+        if (request.submissionKey() != null) {
+            Submission previous = submissions.findByAssignmentIdAndUserIdAndSubmissionKey(
+                    assignmentId, userId, request.submissionKey()).orElse(null);
+            if (previous != null) {
+                for (SubmissionAnswerRequest requested : request.answers()) {
+                    SubmissionAnswer stored = answers.findBySubmissionIdAndQuestionId(previous.getId(), requested.questionId())
+                            .orElseThrow(() -> new AppException(ErrorCode.CONFLICT,
+                                    "Submission key was used with different answers"));
+                    JsonNode supplied = requested.answer() == null ? NullNode.getInstance() : requested.answer();
+                    if (!decode(stored).equals(supplied)) {
+                        throw new AppException(ErrorCode.CONFLICT,
+                                "Submission key was used with different answers");
+                    }
+                }
+                return view(previous);
+            }
+        }
         Instant now = Instant.now();
         Deadline deadline = requireAccepting(assignment, userId, now);
+        requireExpectedAttempt(assignmentId, userId, request.expectedAttempt());
         Submission draft = requireOrCreateDraft(assignment, member, userId);
         upsertAnswers(assignment, draft, request.answers());
         completeness.requireComplete(
                 questions.findAllByAssignmentIdOrderBySortOrderAscIdAsc(assignment.getId()),
                 answers.findAllBySubmissionIdOrderByIdAsc(draft.getId()));
+        if (request.submissionKey() != null) draft.bindSubmissionKey(request.submissionKey());
         draft.submit(now, deadline.late());
         return view(draft);
     }
@@ -100,9 +127,22 @@ public class SubmissionService {
 
     @Transactional
     public Submission requireCurrentDraftForAttachment(Long assignmentId, Long userId) {
+        return requireCurrentDraftForAttachment(assignmentId, userId, null, false);
+    }
+
+    @Transactional
+    public Submission requireCurrentDraftForAttachment(Long assignmentId, Long userId,
+                                                       Integer expectedAttempt, boolean startNextAttempt) {
         Assignment assignment = lockAssignment(assignmentId);
         CourseMember member = authorization.requireStudent(assignment, userId);
         requireAccepting(assignment, userId, Instant.now());
+        requireExpectedAttempt(assignmentId, userId, expectedAttempt);
+        Submission latest = submissions.findFirstByAssignmentIdAndUserIdOrderByAttemptNoDesc(assignmentId, userId)
+                .orElse(null);
+        if (latest != null && latest.getStatus() != SubmissionStatus.DRAFT && !startNextAttempt) {
+            throw new AppException(ErrorCode.CONFLICT,
+                    "The previous attempt is submitted; start a new attempt explicitly");
+        }
         return requireOrCreateDraft(assignment, member, userId);
     }
 
@@ -161,6 +201,15 @@ public class SubmissionService {
     private Assignment lockAssignment(Long assignmentId) {
         return assignments.findByIdForUpdate(assignmentId)
                 .orElseThrow(() -> notFound("Assignment not found"));
+    }
+
+    private void requireExpectedAttempt(Long assignmentId, Long userId, Integer expectedAttempt) {
+        if (expectedAttempt == null) return;
+        int latestAttempt = submissions.findFirstByAssignmentIdAndUserIdOrderByAttemptNoDesc(assignmentId, userId)
+                .map(Submission::getAttemptNo).orElse(0);
+        if (latestAttempt != expectedAttempt) {
+            throw new AppException(ErrorCode.CONFLICT, "Submission attempt changed; reload before saving");
+        }
     }
 
     private Assignment requireAssignment(Long assignmentId) {

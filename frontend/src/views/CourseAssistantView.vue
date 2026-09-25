@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ChatDotRound, Close, Plus, Promotion, Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { assistantApi } from '@/api/assistant'
+import { ApiError } from '@/api/client'
 import { streamJsonSse, type TypedSseEvent } from '@/api/sse'
 import type { ChatMessage, Conversation } from '@/types/domain'
 
@@ -65,6 +66,8 @@ async function selectConversation(
   courseVersion = courseGeneration,
 ) {
   if (sending.value) stopStream()
+  streamError.value = ''
+  lastQuestion.value = ''
   const requestVersion = ++conversationRequestGeneration
   activeConversationId.value = id
   messages.value = []
@@ -99,10 +102,11 @@ function applyStreamEvent(event: TypedSseEvent, assistantMessage: ChatMessage, c
     const conversation = conversations.value.find((item) => item.id === conversationId)
     if (conversation) conversation.title = title
   } else if (event.type === 'done') {
-    if (event.data.message?.id) assistantMessage.id = event.data.message.id
+    if (event.data.message?.id) assistantMessage.id = String(event.data.message.id)
     assistantMessage.pending = false
   } else if (event.type === 'error') {
-    streamError.value = event.data.message
+    streamError.value = `${event.data.message || '回答生成失败，请重试'}${event.data.code ? `（${event.data.code}）` : ''}${event.traceId ? `，追踪号 ${event.traceId}` : ''}`
+    assistantMessage.content ||= streamError.value
     assistantMessage.pending = false
   }
   void scrollToBottom()
@@ -118,14 +122,14 @@ async function sendMessage(retryText?: string) {
   lastQuestion.value = content
   streamError.value = ''
   messages.value.push({ id: `local-user-${Date.now()}`, role: 'USER', content, createdAt: new Date().toISOString() })
-  const assistantMessage: ChatMessage = {
+  const assistantMessage = reactive<ChatMessage>({
     id: `local-assistant-${Date.now()}`,
     role: 'ASSISTANT',
     content: '',
     citations: [],
     createdAt: new Date().toISOString(),
     pending: true,
-  }
+  })
   messages.value.push(assistantMessage)
   sending.value = true
   const stream = {
@@ -154,7 +158,9 @@ async function sendMessage(retryText?: string) {
     )
   } catch (error) {
     if (activeStream === stream && !stream.controller.signal.aborted && courseVersion === courseGeneration) {
-      streamError.value = error instanceof Error ? error.message : '回答生成失败'
+      streamError.value = error instanceof ApiError
+        ? `${error.message}（${error.code}）${error.traceId ? `，追踪号 ${error.traceId}` : ''}`
+        : error instanceof Error ? error.message : '回答生成失败'
       assistantMessage.content ||= '回答未能完整生成，请重试。'
     }
   } finally {
@@ -172,6 +178,7 @@ function stopStream() {
   activeStream = null
   stream.controller.abort()
   sending.value = false
+  streamError.value = '已停止生成；未完成的回答不会保存，可以重试。'
   void assistantApi.cancel(stream.courseId, stream.conversationId, stream.requestId).catch(() => undefined)
   for (let index = messages.value.length - 1; index >= 0; index -= 1) {
     if (messages.value[index]?.pending) {
@@ -196,6 +203,8 @@ async function sendFeedback(messageId: string, helpful: boolean) {
 
 function activateCourse() {
   stopStream()
+  question.value = ''
+  lastQuestion.value = ''
   courseGeneration += 1
   conversationRequestGeneration += 1
   conversations.value = []
@@ -243,7 +252,7 @@ onBeforeUnmount(() => {
                   <span>{{ index + 1 }}</span><div><b>{{ citation.documentName || citation.source || citation.documentId }}</b><small>{{ [citation.chapter, citation.section, citation.page ? `第 ${citation.page} 页` : ''].filter(Boolean).join(' · ') }}</small><p v-if="citation.excerpt || citation.quote">{{ citation.excerpt || citation.quote }}</p></div>
                 </div>
               </div>
-              <div v-if="message.role === 'ASSISTANT' && !message.pending && !message.id.startsWith('local-')" class="message__feedback"><span>这条回答有帮助吗？</span><el-button text size="small" @click="sendFeedback(message.id, true)">有帮助</el-button><el-button text size="small" @click="sendFeedback(message.id, false)">需改进</el-button></div>
+              <div v-if="message.role === 'ASSISTANT' && !message.pending && !String(message.id).startsWith('local-')" class="message__feedback"><span>这条回答有帮助吗？</span><el-button text size="small" @click="sendFeedback(message.id, true)">有帮助</el-button><el-button text size="small" @click="sendFeedback(message.id, false)">需改进</el-button></div>
             </div>
           </article>
         </div>

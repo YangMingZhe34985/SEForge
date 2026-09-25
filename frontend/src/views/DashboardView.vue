@@ -6,7 +6,7 @@ import EmptyState from '@/components/EmptyState.vue'
 import { analyticsApi } from '@/api/analytics'
 import { courseApi } from '@/api/courses'
 import { useCourseStore } from '@/stores/courses'
-import type { CourseClass, CourseDashboard, NamedValue } from '@/types/domain'
+import type { AnalyticsSnapshot, CourseClass, CourseDashboard, NamedValue } from '@/types/domain'
 
 const courseStore = useCourseStore()
 const dashboard = ref<CourseDashboard | null>(null)
@@ -14,6 +14,11 @@ const loading = ref(false)
 const snapshotting = ref(false)
 const courseClasses = ref<CourseClass[]>([])
 const selectedClassId = ref('')
+const snapshots = ref<AnalyticsSnapshot[]>([])
+const historyPage = ref(1)
+const historyTotal = ref(0)
+const errorMessage = ref('')
+let loadGeneration = 0
 const maxTrend = computed(() => Math.max(1, ...(dashboard.value?.errorTrends.map((item) => item.value) || [1])))
 
 const tutorLabels: Record<string, string> = {
@@ -26,7 +31,10 @@ const tutorLabels: Record<string, string> = {
 }
 
 async function load() {
-  if (!courseStore.selectedCourseId) {
+  const generation = ++loadGeneration
+  const courseId = courseStore.selectedCourseId
+  errorMessage.value = ''
+  if (!courseId) {
     dashboard.value = null
     return
   }
@@ -34,14 +42,17 @@ async function load() {
   try {
     const classId = selectedClassId.value || undefined
     const [current, snapshotPage] = await Promise.all([
-      analyticsApi.dashboard(courseStore.selectedCourseId, classId),
-      analyticsApi.snapshots(courseStore.selectedCourseId, classId, 0, 30),
+      analyticsApi.dashboard(courseId, classId),
+      analyticsApi.snapshots(courseId, classId, historyPage.value - 1, 10),
     ])
+    if (generation !== loadGeneration) return
+    snapshots.value = snapshotPage.items
+    historyTotal.value = snapshotPage.total
     const trends = analyticsApi.snapshotTrends(snapshotPage.items)
     dashboard.value = { ...current, errorTrends: trends.length ? trends : current.errorTrends }
   }
-  catch (error) { ElMessage.error(error instanceof Error ? error.message : '教学分析加载失败') }
-  finally { loading.value = false }
+  catch (error) { if (generation === loadGeneration) { dashboard.value = null; snapshots.value = []; errorMessage.value = error instanceof Error ? error.message : '教学分析加载失败' } }
+  finally { if (generation === loadGeneration) loading.value = false }
 }
 
 async function loadClasses() {
@@ -53,6 +64,10 @@ async function loadClasses() {
 }
 
 async function changeCourse() {
+  ++loadGeneration
+  dashboard.value = null
+  snapshots.value = []
+  historyPage.value = 1
   await loadClasses()
   await load()
 }
@@ -88,7 +103,8 @@ function sorted(items: NamedValue[]): NamedValue[] {
   return [...items].sort((a, b) => b.value - a.value)
 }
 
-watch(selectedClassId, load)
+watch(selectedClassId, () => { historyPage.value = 1; dashboard.value = null; void load() })
+watch(historyPage, load)
 watch(() => courseStore.selectedCourseId, changeCourse)
 onMounted(changeCourse)
 </script>
@@ -104,6 +120,7 @@ onMounted(changeCourse)
         <el-button type="primary" :loading="snapshotting" @click="createSnapshot">生成快照</el-button>
       </div>
     </PageHeader>
+    <el-alert v-if="errorMessage" :title="errorMessage" type="error" show-icon :closable="false" />
     <div v-if="dashboard" v-loading="loading" class="dashboard-grid">
       <section class="metrics-grid dashboard-span">
         <article v-for="metric in dashboard.metrics" :key="metric.label" class="metric-card"><span>{{ metric.label }}</span><div><strong>{{ metric.value }}</strong><small>{{ metric.unit }}</small></div><em v-if="metric.delta !== undefined" :class="{ down: metric.delta < 0 }">{{ metric.delta > 0 ? '+' : '' }}{{ metric.delta }}%</em></article>
@@ -118,7 +135,11 @@ onMounted(changeCourse)
       <section class="panel"><div class="panel__header"><h2>AI Tutor 使用分布</h2></div><div class="panel__body ranking"><article v-for="(item,index) in sorted(dashboard.tutorUsage)" :key="item.name"><span>{{ index + 1 }}</span><strong>{{ tutorLabels[item.name] || item.name }}</strong><b>{{ item.value }} 次</b></article><EmptyState v-if="!dashboard.tutorUsage.length" title="暂无 Tutor 记录" description="学生使用 AI Tutor 后将在此汇总。" /></div></section>
       <section class="panel"><div class="panel__header"><h2>课程问答反馈</h2></div><div class="panel__body feedback-summary"><strong>{{ dashboard.qaFeedback.helpfulRate }}%</strong><span>有用率</span><small>{{ dashboard.qaFeedback.helpful }} 条有用 · {{ dashboard.qaFeedback.notHelpful }} 条无用</small></div></section>
 
-      <section class="panel dashboard-span"><div class="panel__header"><h2>错误趋势</h2><span class="muted">{{ new Date(dashboard.generatedAt).toLocaleString() }} 更新</span></div><div class="trend-chart"><div v-for="item in dashboard.errorTrends" :key="item.date" class="trend-column"><div><i :style="{ height: `${Math.max(3, item.value / maxTrend * 100)}%` }" /><b>{{ item.value }}</b></div><span>{{ item.date.slice(5, 10) }}</span></div></div></section>
+      <section class="panel dashboard-span"><div class="panel__header"><h2>错误趋势</h2><span class="muted">各历史快照的累计失败数（非区间新增）</span></div><div class="trend-chart"><div v-for="item in dashboard.errorTrends" :key="item.date" class="trend-column"><div><i :style="{ height: `${Math.max(3, item.value / maxTrend * 100)}%` }" /><b>{{ item.value }}</b></div><span>{{ item.date.slice(5, 10) }}</span></div></div></section>
+      <section class="panel dashboard-span"><div class="panel__header"><h2>历史快照</h2></div><div class="panel__body">
+        <el-table :data="snapshots"><el-table-column prop="id" label="快照 ID" /><el-table-column prop="generatedAt" label="生成时间" /><el-table-column prop="periodStart" label="前次快照时间" /><el-table-column prop="periodEnd" label="统计截至" /></el-table>
+        <el-pagination v-model:current-page="historyPage" :page-size="10" :total="historyTotal" layout="prev, pager, next, total" />
+      </div></section>
     </div>
     <section v-else class="panel" v-loading="loading"><EmptyState title="暂无教学分析" description="请选择课程；统计快照生成后会显示完成率、成绩、薄弱点和 Tutor 使用情况。" /></section>
   </div>

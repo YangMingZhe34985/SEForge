@@ -26,7 +26,11 @@ class VectorIndexReconciliationServiceTest {
         when(vectors.listIds("embedding-v2", 9L)).thenReturn(Set.of("kept", "orphan"));
         when(vectors.collectionName("embedding-v2")).thenReturn("seforge_chunks_embedding_v2");
 
-        var service = new VectorIndexReconciliationService(chunks, vectors, versions, properties);
+        var writes = mock(CourseIndexWriteService.class);
+        org.mockito.Mockito.doAnswer(call -> ((java.util.function.Supplier<?>) call.getArgument(1)).get())
+                .when(writes).execute(org.mockito.ArgumentMatchers.eq(9L), org.mockito.ArgumentMatchers.any());
+        var service = new VectorIndexReconciliationService(chunks, vectors, versions, properties, writes,
+                mock(com.ustb.seforge.content.infrastructure.EmbeddingProvider.class));
         var result = service.reconcile(9L, "embedding-v2");
 
         verify(vectors).deleteIds("embedding-v2", 9L, List.of("orphan"));

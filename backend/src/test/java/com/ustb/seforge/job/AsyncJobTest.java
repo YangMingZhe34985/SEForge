@@ -10,6 +10,23 @@ import org.junit.jupiter.api.Test;
 
 class AsyncJobTest {
     @Test
+    void duplicateDispatchCannotRevokeLeaseOrBypassRetryDelay() {
+        AsyncJob job = new AsyncJob(JobKind.REVIEW_DOCUMENT, 7L, 3L, "{}", "duplicate", 3);
+        Instant now = Instant.now().plusSeconds(1);
+        assertThat(job.claim("worker", now, now.plusSeconds(30))).isTrue();
+        job.markQueued();
+        assertThat(job.getStatus()).isEqualTo(JobStatus.RUNNING);
+        assertThat(job.renewLease("worker", now, now.plusSeconds(40))).isTrue();
+        assertThat(job.claim("other", now, now.plusSeconds(30))).isFalse();
+        job.fail("worker", now, "retry", now.plusSeconds(10));
+        job.markQueued();
+        assertThat(job.claim("other", now.plusSeconds(1), now.plusSeconds(30))).isFalse();
+        assertThat(job.claim("other", now.plusSeconds(10), now.plusSeconds(40))).isTrue();
+        assertThat(job.complete("other", now.plusSeconds(11), "{}")).isTrue();
+        job.markQueued();
+        assertThat(job.getStatus()).isEqualTo(JobStatus.COMPLETED);
+    }
+    @Test
     void retriesUntilMaxAttemptsThenMovesToDeadLetter() {
         AsyncJob job = new AsyncJob(JobKind.REVIEW_DOCUMENT, 7L, 3L, "{}", "key", 3);
         Instant now = Instant.now();

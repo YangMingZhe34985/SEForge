@@ -167,24 +167,20 @@ public class ReviewSubmissionService {
                 ? reviewJobs.findAllByCourseIdOrderByCreatedAtDesc(courseId, pageable)
                 : reviewJobs.findAllByCourseIdAndReviewTypeOrderByCreatedAtDesc(
                         courseId, reviewType, pageable))
-                .map(ReviewJobView::from);
+                .map(this::view);
         return PageResponse.from(result);
     }
 
     @Transactional(readOnly = true)
     public ReviewJobView get(Long courseId, Long reviewJobId, Long userId) {
         courseAccess.requireTeachingStaff(courseId, userId);
-        return ReviewJobView.from(requireReview(courseId, reviewJobId));
+        return view(requireReview(courseId, reviewJobId));
     }
 
     @Transactional
     public ReviewJobView retry(Long courseId, Long reviewJobId, Long userId) {
         courseAccess.requireTeachingStaff(courseId, userId);
-        ReviewJob review = requireReview(courseId, reviewJobId);
-        if (review.getStatus() != ReviewJobStatus.FAILED
-                && review.getStatus() != ReviewJobStatus.CANCELLED) {
-            throw new AppException(ErrorCode.CONFLICT, "Only failed or cancelled reviews can be retried");
-        }
+        ReviewJob review = reviewJobs.findForRetry(reviewJobId, courseId).orElseThrow(this::notFound);
         AsyncJobView previous = asyncJobs.findForCourse(review.getAsyncJobId(), courseId)
                 .orElseThrow(this::notFound);
         if (previous.status() != JobStatus.DEAD_LETTER
@@ -195,7 +191,7 @@ public class ReviewSubmissionService {
         AsyncJobView async = asyncJobs.submit(review.getReviewType().jobKind(), userId, courseId,
                 Map.of("reviewJobId", review.getId()),
                 "review-retry:" + review.getId() + ":" + UUID.randomUUID());
-        review.attachAsyncJob(async.id());
+        review.retryAs(userId, async.id());
         audit.record(userId, courseId, "REVIEW_RETRY", "REVIEW_JOB", review.getId(),
                 AuditService.SUCCEEDED);
         return ReviewJobView.from(review);
@@ -221,6 +217,7 @@ public class ReviewSubmissionService {
         exported.put("summary", report.getSummary());
         exported.put("model", report.getModelName());
         exported.put("promptVersion", report.getPromptVersion());
+        exported.putPOJO("aiTraceId", report.getAiTraceId());
         exported.put("generatedAt", report.getGeneratedAt().toString());
         try {
             exported.set("result", objectMapper.readTree(report.getStructuredResultJson()));
@@ -234,9 +231,17 @@ public class ReviewSubmissionService {
     private ReviewJobView enqueue(ReviewJob review, String idempotencyKey) {
         reviewJobs.save(review);
         AsyncJobView async = asyncJobs.submit(review.getReviewType().jobKind(), review.getRequestedBy(),
-                review.getCourseId(), Map.of("reviewJobId", review.getId()), idempotencyKey);
+                review.getCourseId(), Map.of("reviewJobId", review.getId()),
+                idempotencyKey == null ? null : "course:" + review.getCourseId() + ":" + idempotencyKey);
         ReviewJob existing = reviewJobs.findByAsyncJobId(async.id()).orElse(null);
         if (existing != null && !existing.getId().equals(review.getId())) {
+            if (!java.util.Objects.equals(existing.getSubmissionId(), review.getSubmissionId())
+                    || !java.util.Objects.equals(existing.getDocumentId(), review.getDocumentId())
+                    || !java.util.Objects.equals(existing.getResourceId(), review.getResourceId())
+                    || !java.util.Objects.equals(existing.getObjectKey(), review.getObjectKey())
+                    || !sameConfig(existing.getConfigJson(), review.getConfigJson())) {
+                throw new AppException(ErrorCode.CONFLICT, "Idempotency key belongs to another review target");
+            }
             reviewJobs.delete(review);
             return ReviewJobView.from(existing);
         }
@@ -257,12 +262,21 @@ public class ReviewSubmissionService {
         return reviewJobs.findByIdAndCourseId(reviewJobId, courseId).orElseThrow(this::notFound);
     }
 
+    private ReviewJobView view(ReviewJob review) {
+        return ReviewJobView.from(review, asyncJobs.findForCourse(review.getAsyncJobId(), review.getCourseId()).orElse(null));
+    }
+
     private String json(Object value) {
         try {
             return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException exception) {
             throw malformed("Review configuration is invalid");
         }
+    }
+
+    private boolean sameConfig(String first, String second) {
+        try { return objectMapper.readTree(first).equals(objectMapper.readTree(second)); }
+        catch (JsonProcessingException invalid) { throw malformed("Review configuration is invalid"); }
     }
 
     private String safe(String value, String fallback) {

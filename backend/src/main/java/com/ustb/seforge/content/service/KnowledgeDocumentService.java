@@ -79,7 +79,7 @@ public class KnowledgeDocumentService {
         this.audit = audit;
     }
 
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public DocumentUploadView upload(Long courseId, Long chapterId, Long actorId, MultipartFile file) {
         access.requireTeachingStaff(courseId, actorId);
         if (chapterId != null) requireChapter(courseId, chapterId);
@@ -92,6 +92,12 @@ public class KnowledgeDocumentService {
         }
         courses.findForUpdate(courseId)
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Course not found"));
+        // Recheck after taking the quota/index lock: another upload may have committed.
+        existing = documents.findByCourseIdAndChecksum(courseId, checksum).orElse(null);
+        if (existing != null && existing.getStatus() != DocumentStatus.DELETED) {
+            AsyncJobView current = currentJob(existing);
+            return new DocumentUploadView(KnowledgeDocumentView.from(existing, current), current, true);
+        }
         long usedBytes = documents.sumStoredBytesByCourseId(courseId);
         long quotaBytes = properties.getStorage().getCourseQuotaBytes();
         if (quotaBytes < 1 || file.getSize() > quotaBytes - Math.min(usedBytes, quotaBytes)) {
@@ -103,7 +109,7 @@ public class KnowledgeDocumentService {
         try (InputStream input = file.getInputStream()) {
             storage.put(objectKey, input, file.getSize(), validated.mediaType());
         } catch (IOException exception) {
-            throw new AppException(ErrorCode.INTERNAL_ERROR, "Could not store document");
+            throw new AppException(ErrorCode.STORAGE_UNAVAILABLE, "知识文档存储失败，请检查 MinIO 连接与应用凭据");
         }
 
         KnowledgeDocument document;
@@ -150,14 +156,17 @@ public class KnowledgeDocumentService {
     @Transactional
     public AsyncJobView reindex(Long courseId, Long documentId, Long actorId) {
         access.requireTeachingStaff(courseId, actorId);
+        courses.findForUpdate(courseId).orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Course not found"));
         KnowledgeDocument document = require(courseId, documentId);
         if (document.getStatus() == DocumentStatus.DELETED) {
             throw new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Document not found");
         }
         String writeVersion = versions.writeVersion();
+        AsyncJobView current = currentJob(document);
+        if (current != null && !current.status().isTerminal()) return current;
         document.reindex(writeVersion);
         AsyncJobView job = enqueue(document, actorId,
-                "reindex:" + document.getVersion(), writeVersion);
+                "reindex:" + UUID.randomUUID(), writeVersion);
         if (document.getIngestedAt() == null) document.queued();
         return job;
     }
@@ -165,8 +174,11 @@ public class KnowledgeDocumentService {
     @Transactional
     public void delete(Long courseId, Long documentId, Long actorId) {
         access.requireTeachingStaff(courseId, actorId);
+        courses.findForUpdate(courseId).orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Course not found"));
         KnowledgeDocument document = require(courseId, documentId);
         if (document.getStatus() == DocumentStatus.DELETED) return;
+        AsyncJobView current = currentJob(document);
+        if (current != null && !current.status().isTerminal()) jobs.cancelForCourse(current.id(), courseId);
         LinkedHashSet<String> indexedVersions = new LinkedHashSet<>(
                 chunks.findEmbeddingVersionsByDocumentId(documentId));
         indexedVersions.add(document.getEmbeddingVersion());
@@ -183,6 +195,7 @@ public class KnowledgeDocumentService {
                     "KNOWLEDGE_DOCUMENT", documentId, AuditService.SUCCEEDED);
         } catch (IOException | RuntimeException exception) {
             document.failed(exception);
+            if (exception instanceof AppException app) throw app;
             throw new AppException(ErrorCode.INTERNAL_ERROR, "Document deletion could not be completed safely");
         }
     }
@@ -191,7 +204,7 @@ public class KnowledgeDocumentService {
         try {
             return storage.open(document.getObjectKey());
         } catch (IOException exception) {
-            throw new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Document object is unavailable");
+            throw new AppException(ErrorCode.STORAGE_UNAVAILABLE, "知识文档无法下载，请检查 MinIO 服务与对象状态");
         }
     }
 

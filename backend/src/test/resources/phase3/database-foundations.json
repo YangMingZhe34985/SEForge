@@ -1,0 +1,427 @@
+{
+  "course": "database-foundations",
+  "documents": [
+    {
+      "source": "atomicity.pdf",
+      "text": "Atomicity ensures a transaction either commits all its changes or leaves none committed."
+    },
+    {
+      "source": "consistency.ppt",
+      "text": "Consistency preserves declared database constraints across committed transactions."
+    },
+    {
+      "source": "isolation.pptx",
+      "text": "Isolation controls how concurrent transactions observe one another's changes."
+    },
+    {
+      "source": "durability.docx",
+      "text": "Durability means acknowledged committed changes survive a subsequent process restart."
+    },
+    {
+      "source": "primarykey.md",
+      "text": "A primarykey uniquely identifies a row and cannot contain null values."
+    },
+    {
+      "source": "foreignkey.txt",
+      "text": "A foreignkey enforces that a referenced row exists, subject to its declared delete policy."
+    },
+    {
+      "source": "normalization.pdf",
+      "text": "Normalization decomposes relations to reduce redundancy and update anomalies."
+    },
+    {
+      "source": "indexing.ppt",
+      "text": "Indexing adds lookup structures to speed selected queries at storage and write cost."
+    },
+    {
+      "source": "deadlock.pptx",
+      "text": "A deadlock is a cycle of transactions waiting for locks held by one another."
+    },
+    {
+      "source": "optimistic.docx",
+      "text": "Optimistic concurrency compares a version before committing and rejects stale updates."
+    }
+  ],
+  "questions": [
+    {
+      "id": "database-foundations-1-1",
+      "question": "What does atomicity mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "atomicity.pdf"
+      ]
+    },
+    {
+      "id": "database-foundations-1-2",
+      "question": "Explain the purpose of atomicity using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "atomicity.pdf"
+      ]
+    },
+    {
+      "id": "database-foundations-1-3",
+      "question": "Summarize the documented principle of atomicity.",
+      "answerable": true,
+      "expectedSources": [
+        "atomicity.pdf"
+      ]
+    },
+    {
+      "id": "database-foundations-1-4",
+      "question": "Which property or practice is described under atomicity?",
+      "answerable": true,
+      "expectedSources": [
+        "atomicity.pdf"
+      ]
+    },
+    {
+      "id": "database-foundations-2-1",
+      "question": "What does consistency mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "consistency.ppt"
+      ]
+    },
+    {
+      "id": "database-foundations-2-2",
+      "question": "Explain the purpose of consistency using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "consistency.ppt"
+      ]
+    },
+    {
+      "id": "database-foundations-2-3",
+      "question": "Summarize the documented principle of consistency.",
+      "answerable": true,
+      "expectedSources": [
+        "consistency.ppt"
+      ]
+    },
+    {
+      "id": "database-foundations-2-4",
+      "question": "Which property or practice is described under consistency?",
+      "answerable": true,
+      "expectedSources": [
+        "consistency.ppt"
+      ]
+    },
+    {
+      "id": "database-foundations-3-1",
+      "question": "What does isolation mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "isolation.pptx"
+      ]
+    },
+    {
+      "id": "database-foundations-3-2",
+      "question": "Explain the purpose of isolation using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "isolation.pptx"
+      ]
+    },
+    {
+      "id": "database-foundations-3-3",
+      "question": "Summarize the documented principle of isolation.",
+      "answerable": true,
+      "expectedSources": [
+        "isolation.pptx"
+      ]
+    },
+    {
+      "id": "database-foundations-3-4",
+      "question": "Which property or practice is described under isolation?",
+      "answerable": true,
+      "expectedSources": [
+        "isolation.pptx"
+      ]
+    },
+    {
+      "id": "database-foundations-4-1",
+      "question": "What does durability mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "durability.docx"
+      ]
+    },
+    {
+      "id": "database-foundations-4-2",
+      "question": "Explain the purpose of durability using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "durability.docx"
+      ]
+    },
+    {
+      "id": "database-foundations-4-3",
+      "question": "Summarize the documented principle of durability.",
+      "answerable": true,
+      "expectedSources": [
+        "durability.docx"
+      ]
+    },
+    {
+      "id": "database-foundations-4-4",
+      "question": "Which property or practice is described under durability?",
+      "answerable": true,
+      "expectedSources": [
+        "durability.docx"
+      ]
+    },
+    {
+      "id": "database-foundations-5-1",
+      "question": "What does primarykey mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "primarykey.md"
+      ]
+    },
+    {
+      "id": "database-foundations-5-2",
+      "question": "Explain the purpose of primarykey using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "primarykey.md"
+      ]
+    },
+    {
+      "id": "database-foundations-5-3",
+      "question": "Summarize the documented principle of primarykey.",
+      "answerable": true,
+      "expectedSources": [
+        "primarykey.md"
+      ]
+    },
+    {
+      "id": "database-foundations-5-4",
+      "question": "Which property or practice is described under primarykey?",
+      "answerable": true,
+      "expectedSources": [
+        "primarykey.md"
+      ]
+    },
+    {
+      "id": "database-foundations-6-1",
+      "question": "What does foreignkey mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "foreignkey.txt"
+      ]
+    },
+    {
+      "id": "database-foundations-6-2",
+      "question": "Explain the purpose of foreignkey using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "foreignkey.txt"
+      ]
+    },
+    {
+      "id": "database-foundations-6-3",
+      "question": "Summarize the documented principle of foreignkey.",
+      "answerable": true,
+      "expectedSources": [
+        "foreignkey.txt"
+      ]
+    },
+    {
+      "id": "database-foundations-6-4",
+      "question": "Which property or practice is described under foreignkey?",
+      "answerable": true,
+      "expectedSources": [
+        "foreignkey.txt"
+      ]
+    },
+    {
+      "id": "database-foundations-7-1",
+      "question": "What does normalization mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "normalization.pdf"
+      ]
+    },
+    {
+      "id": "database-foundations-7-2",
+      "question": "Explain the purpose of normalization using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "normalization.pdf"
+      ]
+    },
+    {
+      "id": "database-foundations-7-3",
+      "question": "Summarize the documented principle of normalization.",
+      "answerable": true,
+      "expectedSources": [
+        "normalization.pdf"
+      ]
+    },
+    {
+      "id": "database-foundations-7-4",
+      "question": "Which property or practice is described under normalization?",
+      "answerable": true,
+      "expectedSources": [
+        "normalization.pdf"
+      ]
+    },
+    {
+      "id": "database-foundations-8-1",
+      "question": "What does indexing mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "indexing.ppt"
+      ]
+    },
+    {
+      "id": "database-foundations-8-2",
+      "question": "Explain the purpose of indexing using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "indexing.ppt"
+      ]
+    },
+    {
+      "id": "database-foundations-8-3",
+      "question": "Summarize the documented principle of indexing.",
+      "answerable": true,
+      "expectedSources": [
+        "indexing.ppt"
+      ]
+    },
+    {
+      "id": "database-foundations-8-4",
+      "question": "Which property or practice is described under indexing?",
+      "answerable": true,
+      "expectedSources": [
+        "indexing.ppt"
+      ]
+    },
+    {
+      "id": "database-foundations-9-1",
+      "question": "What does deadlock mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "deadlock.pptx"
+      ]
+    },
+    {
+      "id": "database-foundations-9-2",
+      "question": "Explain the purpose of deadlock using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "deadlock.pptx"
+      ]
+    },
+    {
+      "id": "database-foundations-9-3",
+      "question": "Summarize the documented principle of deadlock.",
+      "answerable": true,
+      "expectedSources": [
+        "deadlock.pptx"
+      ]
+    },
+    {
+      "id": "database-foundations-9-4",
+      "question": "Which property or practice is described under deadlock?",
+      "answerable": true,
+      "expectedSources": [
+        "deadlock.pptx"
+      ]
+    },
+    {
+      "id": "database-foundations-10-1",
+      "question": "What does optimistic mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "optimistic.docx"
+      ]
+    },
+    {
+      "id": "database-foundations-10-2",
+      "question": "Explain the purpose of optimistic using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "optimistic.docx"
+      ]
+    },
+    {
+      "id": "database-foundations-10-3",
+      "question": "Summarize the documented principle of optimistic.",
+      "answerable": true,
+      "expectedSources": [
+        "optimistic.docx"
+      ]
+    },
+    {
+      "id": "database-foundations-10-4",
+      "question": "Which property or practice is described under optimistic?",
+      "answerable": true,
+      "expectedSources": [
+        "optimistic.docx"
+      ]
+    },
+    {
+      "id": "database-foundations-unsupported-1",
+      "question": "What does this course say about astronomy?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "database-foundations-unsupported-2",
+      "question": "What does this course say about geology?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "database-foundations-unsupported-3",
+      "question": "What does this course say about surgery?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "database-foundations-unsupported-4",
+      "question": "What does this course say about paleontology?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "database-foundations-unsupported-5",
+      "question": "What does this course say about musicology?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "database-foundations-unsupported-6",
+      "question": "What does this course say about botany?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "database-foundations-unsupported-7",
+      "question": "What does this course say about meteorology?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "database-foundations-unsupported-8",
+      "question": "What does this course say about archaeology?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "database-foundations-unsupported-9",
+      "question": "What does this course say about oceanography?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "database-foundations-unsupported-10",
+      "question": "What does this course say about pharmacology?",
+      "answerable": false,
+      "expectedSources": []
+    }
+  ]
+}

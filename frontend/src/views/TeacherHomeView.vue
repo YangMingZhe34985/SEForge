@@ -12,18 +12,18 @@ const router = useRouter()
 const auth = useAuthStore()
 const store = useCourseStore()
 const createVisible = ref(false)
-const courseForm = reactive({ code: '', name: '', description: '', semesterId: '' })
+const courseForm = reactive({ name: '', description: '', semesterId: '' })
 const canCreateCourse = computed(() => auth.canTeach)
 
 async function createCourse() {
-  if (!courseForm.code.trim() || !courseForm.name.trim() || !courseForm.semesterId) {
-    return ElMessage.warning('请填写课程编号、名称和学期')
+  if (!courseForm.name.trim() || !courseForm.semesterId) {
+    return ElMessage.warning('请填写课程名称和学期')
   }
   try {
     const course = await store.create({ ...courseForm })
     createVisible.value = false
-    Object.assign(courseForm, { code: '', name: '', description: '', semesterId: '' })
-    ElMessage.success('课程已创建')
+    Object.assign(courseForm, { name: '', description: '', semesterId: '' })
+    ElMessage.success(`课程已创建，编号：${course.code}`)
     await router.push({ name: 'teacher-course', params: { courseId: course.id } })
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '创建失败')
@@ -75,7 +75,7 @@ onMounted(async () => {
     <el-dialog v-model="createVisible" title="创建课程" width="min(520px, 94vw)">
       <el-form label-position="top">
         <div class="form-grid">
-          <el-form-item label="课程编号"><el-input v-model="courseForm.code" placeholder="SE-2026" /></el-form-item>
+          <p class="muted">课程编号将在创建后由系统生成。</p>
           <el-form-item label="课程名称"><el-input v-model="courseForm.name" /></el-form-item>
         </div>
         <el-form-item label="所属学期">

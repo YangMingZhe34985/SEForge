@@ -119,6 +119,7 @@ public class KnowledgeDocument extends BaseEntity {
         ready();
     }
     public void ingestionFailed(Throwable error) {
+        if (status == DocumentStatus.DELETED || status == DocumentStatus.DELETING) return;
         if (status == DocumentStatus.CANCELLED) return;
         if (ingestedAt == null) {
             failed(error);
@@ -128,6 +129,7 @@ public class KnowledgeDocument extends BaseEntity {
         setError(error);
     }
     public void ingestionCancelled() {
+        if (status == DocumentStatus.DELETED || status == DocumentStatus.DELETING) return;
         if (ingestedAt == null) {
             status = DocumentStatus.CANCELLED;
             lastError = "Ingestion was cancelled";

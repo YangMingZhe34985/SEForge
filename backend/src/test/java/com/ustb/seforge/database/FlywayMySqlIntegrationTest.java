@@ -27,6 +27,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class FlywayMySqlIntegrationTest {
     @Container
     static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4.4")
+            .withCommand("--log-bin-trust-function-creators=1")
             .withDatabaseName("seforge")
             .withUsername("seforge")
             .withPassword("seforge-test-password");

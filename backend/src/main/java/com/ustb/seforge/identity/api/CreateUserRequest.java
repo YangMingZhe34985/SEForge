@@ -11,7 +11,7 @@ import java.util.Set;
 
 public record CreateUserRequest(
         @NotBlank @Email @Size(max = 190) String email,
-        @NotBlank @Pattern(regexp = "^[A-Za-z0-9_.-]{3,64}$") String username,
+        @NotBlank @Pattern(regexp = "^[A-Za-z0-9_.-]{3,64}$", message = "用户名须为 3–64 位英文字母、数字、下划线、点或短横线") String username,
         @NotBlank @Size(min = 10, max = 72) String password,
         @NotBlank @Size(max = 100) String displayName,
         @NotNull AccountType accountType,

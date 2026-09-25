@@ -38,9 +38,9 @@ public class VectorReconciliationScheduler {
                 try {
                     var result = reconciliation.reconcile(course.getId(), version);
                     if (result.orphansDeleted() > 0 || !result.missingVectorIds().isEmpty()) {
-                        log.warn("Vector reconciliation course={} version={} deletedOrphans={} missing={}",
+                        log.info("Vector reconciliation course={} version={} deletedOrphans={} missingDetected={} repaired={}",
                                 course.getId(), version, result.orphansDeleted(),
-                                result.missingVectorIds().size());
+                                result.missingVectorIds().size(), result.repairedVectors());
                     }
                 } catch (RuntimeException exception) {
                     log.warn("Vector reconciliation failed for course={} version={}: {}",

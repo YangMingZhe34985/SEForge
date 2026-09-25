@@ -167,7 +167,21 @@ class ReviewExecutionServiceCodeTest {
 
         assertThat(review.getStatus()).isEqualTo(ReviewJobStatus.FAILED);
         assertThat(review.getErrorCode()).isEqualTo("SONAR_FAILED");
-        assertThat(review.getErrorMessage()).contains("FAILED");
+        assertThat(review.getErrorMessage()).contains("Static analysis failed").doesNotContain("compute task");
+    }
+
+    @Test
+    void sonarConfigurationReasonSurvivesTheJobView() throws Exception {
+        ReviewJob review = review();
+        when(reviewJobs.findByAsyncJobId(77L)).thenReturn(Optional.of(review));
+        service.markFailed(77L, new SonarGatewayException("SonarQube token is not configured"));
+        var execution = new com.ustb.seforge.job.api.AsyncJobView(77L,
+                com.ustb.seforge.job.domain.JobKind.REVIEW_CODE,
+                com.ustb.seforge.job.domain.JobStatus.DEAD_LETTER, 4L, 3, 3, false, null, null,
+                java.time.Instant.now(), java.time.Instant.now());
+        var view = com.ustb.seforge.review.api.ReviewJobView.from(review, execution);
+        assertThat(view.errorCode()).isEqualTo("SONAR_TOKEN_MISSING");
+        assertThat(view.errorMessage()).contains("SEFORGE_SONAR_TOKEN");
     }
 
     private ReviewJob review() throws Exception {

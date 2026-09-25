@@ -11,4 +11,4 @@
 
 这些是已检查的机器输出副本，不包含真实凭据或完整备份。原始测试凭据、证书私钥、SQL/对象备份位于 Git 忽略的 `backend/target/phase6-release/`，不得整体提交或分享。真实供应商 TTFT 未验证。
 
-最终测试数量及未验证边界见 `docs/phase-6-summary.md`。工程验证不替代用户验收，不表示已部署至实际生产域名。
+最终测试数量及未验证边界见[开发过程记录书 Phase 6](../../development-history.md#phase-6-teacher-dashboard-与生产发布)。工程验证不替代用户验收，不表示已部署至实际生产域名。

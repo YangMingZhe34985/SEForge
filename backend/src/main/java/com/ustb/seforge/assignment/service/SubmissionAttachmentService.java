@@ -19,6 +19,7 @@ import java.io.InputStream;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -66,8 +67,22 @@ public class SubmissionAttachmentService {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public SubmissionAttachmentView upload(Long assignmentId, Long questionId, Long userId,
                                            MultipartFile file) {
+        return uploadWithDraft(assignmentId, questionId, userId, file,
+                () -> submissions.requireCurrentDraftForAttachment(assignmentId, userId));
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public SubmissionAttachmentView upload(Long assignmentId, Long questionId, Long userId,
+                                           MultipartFile file, Integer expectedAttempt, boolean startNextAttempt) {
+        return uploadWithDraft(assignmentId, questionId, userId, file,
+                () -> submissions.requireCurrentDraftForAttachment(
+                        assignmentId, userId, expectedAttempt, startNextAttempt));
+    }
+
+    private SubmissionAttachmentView uploadWithDraft(Long assignmentId, Long questionId, Long userId,
+                                                     MultipartFile file, Supplier<Submission> draft) {
         ValidatedArchive archive = validate(file);
-        Submission submission = submissions.requireCurrentDraftForAttachment(assignmentId, userId);
+        Submission submission = draft.get();
         submission.requireDraft();
         AssignmentQuestion question = questions.findByIdAndAssignmentId(questionId, assignmentId)
                 .orElseThrow(() -> notFound("Question not found"));

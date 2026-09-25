@@ -26,6 +26,37 @@ type ApiHandler = (path: string, method: string, request: Request) => MockRespon
 
 const now = '2026-09-22T02:00:00Z'
 
+test('Dashboard 班级筛选、历史分页与错误重试', async ({ page }) => {
+  const course: Course = { id: 'p6', code: 'P6', name: 'Phase 6', description: '', semesterId: 'semester-1', semesterName: '2026 秋季', role: 'TEACHER', memberCount: 2, createdAt: now }
+  let fail = false
+  const requests: string[] = []
+  const dashboard = { courseId: 'p6', generatedAt: now, overview: { students: 2, assignments: 1, expectedSubmissions: 2, completedSubmissions: 1, completionRate: 50, averageFinalScore: 80 }, gradeDistribution: [{ bucket: '80-89', count: 1 }], knowledgePoints: [{ title: '事务', scoreRate: 50, weak: true }], frequentQuestions: [{ excerpt: '如何设计事务？', count: 3 }], tutor: { total: 3, failed: 1, byOperation: { HINT: 3 } }, qaFeedback: { helpful: 2, notHelpful: 0, helpfulRate: 100 }, errors: { tutorFailures: 1, reviewFailures: 0 } }
+  await mockPlatform(page, 'teacher', [course], (path, _method, request) => {
+    if (path === '/courses/p6') return { data: course }
+    if (path.endsWith('/classes')) return { data: [{ id: 'class-p6', code: 'P6-A', name: '一班' }] }
+    if (path.endsWith('/analytics/dashboard')) return fail ? { status: 503, body: JSON.stringify({ code: 'UNAVAILABLE', message: '统计暂不可用' }) } : { data: dashboard }
+    if (path.endsWith('/analytics/snapshots')) {
+      requests.push(request.url())
+      const index = new URL(request.url()).searchParams.get('page') || '0'
+      return { data: { items: [{ id: `snapshot-${index}`, metricType: 'DASHBOARD_V1', generatedAt: now, periodEnd: now, payload: dashboard }], page: Number(index), size: 10, total: 21 } }
+    }
+    return undefined
+  })
+  await page.goto('/teacher/courses/p6/dashboard')
+  await expect(page.getByText('snapshot-0', { exact: true })).toBeVisible()
+  await page.locator('.el-pagination').getByText('2', { exact: true }).click()
+  await expect(page.getByText('snapshot-1', { exact: true })).toBeVisible()
+  await page.getByText('全部教学班', { exact: true }).click()
+  await page.getByRole('option', { name: '一班 (P6-A)' }).click()
+  await expect.poll(() => requests.some(url => url.includes('classId=class-p6') && url.includes('page=0'))).toBe(true)
+  fail = true
+  await page.getByRole('button', { name: '刷新数据' }).click()
+  await expect(page.getByText('统计暂不可用', { exact: true })).toBeVisible()
+  fail = false
+  await page.getByRole('button', { name: '刷新数据' }).click()
+  await expect(page.getByText('snapshot-0', { exact: true })).toBeVisible()
+})
+
 const users = {
   admin: { id: '1', email: 'admin@seforge.test', username: 'admin', displayName: '平台管理员', accountType: 'PLATFORM', roles: ['ADMIN', 'USER'], enabled: true },
   teacher: { id: '2', email: 'teacher@seforge.test', username: 'teacher', displayName: '任课教师', accountType: 'TEACHER', roles: ['USER'], enabled: true },
@@ -259,6 +290,33 @@ test('管理员创建教师账号', async ({ page }) => {
   expect(updatedRoles).toEqual(['USER', 'ADMIN'])
 })
 
+test('创建账号显示用户名规则与服务端字段错误', async ({ page }) => {
+  let submissions = 0
+  await mockPlatform(page, 'admin', [], (path, method) => {
+    if (path === '/admin/users' && method === 'GET') return { data: pageOf([]) }
+    if (path === '/admin/users' && method === 'POST') {
+      submissions++
+      return { status: 400, body: JSON.stringify({ code: 'VALIDATION_FAILED', message: 'Request validation failed', details: { username: '用户名字段错误示例' } }) }
+    }
+    return undefined
+  })
+  await page.goto('/admin/users')
+  await page.getByRole('button', { name: '创建账号' }).click()
+  const dialog = page.getByRole('dialog', { name: '创建平台账号' })
+  const field = (name: string) => dialog.locator('.el-form-item').filter({ hasText: name }).locator('input')
+  await field('姓名').fill('张老师')
+  await field('用户名').fill('中文用户名')
+  await field('邮箱').fill('valid@example.invalid')
+  await field('初始密码').fill('ValidPassword123!')
+  await dialog.getByRole('button', { name: '创建', exact: true }).click()
+  await expect(dialog.locator('.el-form-item__error')).toContainText('3–64 位英文字母')
+  expect(submissions).toBe(0)
+  await field('用户名').fill('valid.teacher')
+  await dialog.getByRole('button', { name: '创建', exact: true }).click()
+  await expect(dialog.locator('.el-form-item__error')).toHaveText('用户名字段错误示例')
+  expect(submissions).toBe(1)
+})
+
 test('教师创建课程并上传课程资料', async ({ page }) => {
   const courses: Course[] = []
   const courseClasses: Array<Record<string, unknown>> = []
@@ -270,7 +328,7 @@ test('教师创建课程并上传课程资料', async ({ page }) => {
       const input = request.postDataJSON() as Record<string, string>
       const course: Course = {
         id: 'course-new',
-        code: input.code,
+        code: 'CRS-00000001',
         name: input.name,
         description: input.description,
         semesterId: input.semesterId,
@@ -296,7 +354,8 @@ test('教师创建课程并上传课程资料', async ({ page }) => {
     if (path === '/courses/course-new/classes' && method === 'GET') return { data: courseClasses }
     if (path === '/courses/course-new/classes' && method === 'POST') {
       const input = request.postDataJSON() as Record<string, unknown>
-      const courseClass = { id: 'class-1', courseId: 'course-new', ...input, active: true, createdAt: now }
+      expect(input).not.toHaveProperty('code')
+      const courseClass = { id: 'class-1', courseId: 'course-new', ...input, code: 'CLS-00000002', active: true, createdAt: now }
       courseClasses.push(courseClass)
       return { data: courseClass }
     }
@@ -317,7 +376,7 @@ test('教师创建课程并上传课程资料', async ({ page }) => {
   await page.goto('/teacher')
   await page.getByRole('button', { name: '创建课程' }).click()
   const dialog = page.getByRole('dialog', { name: '创建课程' })
-  await dialog.locator('.el-form-item').filter({ hasText: '课程编号' }).locator('input').fill('SE-2026')
+  await expect(dialog.getByText('课程编号将在创建后由系统生成。')).toBeVisible()
   await dialog.locator('.el-form-item').filter({ hasText: '课程名称' }).locator('input').fill('软件工程实践')
   await dialog.locator('.el-form-item').filter({ hasText: '所属学期' }).locator('.el-select').click()
   await page.getByRole('option', { name: '2026 秋季' }).click()
@@ -336,7 +395,7 @@ test('教师创建课程并上传课程资料', async ({ page }) => {
   await page.getByRole('tab', { name: '教学管理' }).click()
   await page.getByRole('button', { name: '创建教学班' }).click()
   const classDialog = page.getByRole('dialog', { name: '创建教学班' })
-  await classDialog.locator('.el-form-item').filter({ hasText: '教学班代码' }).locator('input').fill('SE-01')
+  await expect(classDialog.locator('.el-form-item').filter({ hasText: '教学班代码' }).locator('input')).toBeDisabled()
   await classDialog.locator('.el-form-item').filter({ hasText: '教学班名称' }).locator('input').fill('软件工程 1 班')
   await classDialog.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByText('软件工程 1 班', { exact: true })).toBeVisible()
@@ -344,7 +403,7 @@ test('教师创建课程并上传课程资料', async ({ page }) => {
   await page.getByRole('button', { name: '创建邀请码' }).click()
   const inviteDialog = page.getByRole('dialog', { name: '创建课程邀请码' })
   await inviteDialog.locator('.el-form-item').filter({ hasText: '加入教学班' }).locator('.el-select').click()
-  await page.getByRole('option', { name: '软件工程 1 班 (SE-01)' }).click()
+  await page.getByRole('option', { name: '软件工程 1 班 (CLS-00000002)' }).click()
   await inviteDialog.getByRole('button', { name: '生成并复制' }).click()
   await expect(page.getByText('JOIN-PHASE1', { exact: true })).toBeVisible()
   expect(inviteRequest).toMatchObject({ classId: 'class-1', memberRole: 'STUDENT' })
@@ -463,6 +522,77 @@ test('学生通过邀请码加入课程并完成带引用问答', async ({ page 
   expect(questionRequest?.requestId).toEqual(expect.any(String))
 })
 
+test('Phase 3 知识库错误可见，上传、失败重试与删除闭环', async ({ page }) => {
+  const course: Course = { id: 'p3', code: 'P3', name: 'Phase 3 课程', description: '', semesterId: 'semester-1', semesterName: '2026 秋季', role: 'TEACHER', memberCount: 1, createdAt: now }
+  let unavailable = true
+  let exists = false
+  let status = 'FAILED'
+  const job = () => ({ id: 'p3-job', status: status === 'READY' ? 'COMPLETED' : 'FAILED', error: status === 'READY' ? null : '可控摄取故障', cancelRequested: false })
+  const document = () => ({ id: 'p3-doc', courseId: 'p3', name: 'phase3.md', sizeBytes: 10, status, job: job() })
+  await mockPlatform(page, 'teacher', [course], (path, method) => {
+    if (path === '/courses/p3/knowledge/documents' && method === 'GET') {
+      if (unavailable) return { status: 503, body: JSON.stringify({ code: 'UNAVAILABLE', message: '知识库暂不可用' }) }
+      return { data: exists ? [document()] : [] }
+    }
+    if (path === '/courses/p3/knowledge/documents' && method === 'POST') {
+      exists = true
+      return { data: { document: document(), job: job(), duplicate: false } }
+    }
+    if (path === '/courses/p3/knowledge/documents/p3-doc/reindex' && method === 'POST') {
+      status = 'READY'
+      return { data: job() }
+    }
+    if (path === '/jobs/p3-job' && method === 'GET') return { data: job() }
+    if (path === '/courses/p3/knowledge/documents/p3-doc' && method === 'DELETE') { exists = false; return { data: null } }
+    return undefined
+  })
+  await page.goto('/teacher/courses/p3')
+  await expect(page.getByText('知识库暂不可用', { exact: true })).toBeVisible()
+  await expect(page.getByText('暂无知识文档', { exact: true })).not.toBeVisible()
+  unavailable = false
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByText('暂无知识文档', { exact: true })).toBeVisible()
+  await expect(page.locator('.el-loading-mask')).not.toBeVisible()
+  await page.locator('label.upload-button').filter({ hasText: '上传知识文档' }).locator('input').setInputFiles({ name: 'phase3.md', mimeType: 'text/markdown', buffer: Buffer.from('# cohesion') })
+  await expect.poll(() => exists).toBe(true)
+  const row = page.locator('.document-table .el-table__row').filter({ hasText: 'phase3.md' })
+  await expect(row.getByText('FAILED', { exact: true })).toBeVisible()
+  await row.getByRole('button', { name: '重建索引' }).click()
+  await expect(row.getByText('READY', { exact: true })).toBeVisible()
+  await row.getByRole('button', { name: '删除', exact: true }).click()
+  await page.getByRole('dialog', { name: '删除知识文档' }).getByRole('button', { name: 'OK', exact: true }).click()
+  await expect(page.getByText('暂无知识文档', { exact: true })).toBeVisible()
+  expect(exists).toBe(false)
+})
+
+test('Phase 3 中断回答可重试并反馈，不显示内部推理', async ({ page }) => {
+  const course: Course = { id: 'p3', code: 'P3', name: 'Phase 3 课程', description: '', semesterId: 'semester-1', semesterName: '2026 秋季', role: 'STUDENT', memberCount: 1, createdAt: now }
+  let attempts = 0
+  let feedback = false
+  await mockPlatform(page, 'student', [course], (path, method) => {
+    if (path === '/courses/p3/conversations' && method === 'GET') return { data: pageOf([{ id: 'p3-chat', title: '历史会话', updatedAt: now }]) }
+    if (path.endsWith('/p3-chat/messages') && method === 'GET') return { data: pageOf([{ id: 'old', role: 'USER', content: '历史问题', createdAt: now }]) }
+    if (path.endsWith('/p3-chat/messages') && method === 'POST') {
+      attempts += 1
+      const delta = 'event: message.delta\ndata: {"delta":"课程依据回答"}\n\n'
+      return { contentType: 'text/event-stream', body: attempts === 1 ? delta : delta + 'event: done\ndata: {"message":{"id":"saved"}}\n\n' }
+    }
+    if (path.endsWith('/saved/feedback') && method === 'POST') { feedback = true; return { data: null } }
+    return undefined
+  })
+  await page.goto('/student/courses/p3/assistant')
+  await expect(page.getByText('历史问题', { exact: true })).toBeVisible()
+  await page.getByPlaceholder('输入与本课程相关的问题…').fill('cohesion')
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  await expect(page.getByText('流式响应意外中断，请重试（STREAM_INTERRUPTED）', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '有帮助', exact: true })).not.toBeVisible()
+  await page.getByRole('button', { name: '重试', exact: true }).click()
+  await page.getByRole('button', { name: '有帮助', exact: true }).click()
+  await expect(page.getByText('反馈已记录')).toBeVisible()
+  expect(feedback).toBe(true)
+  expect(attempts).toBe(2)
+})
+
 test('学生保存作业草稿、获取 Tutor 提示并正式提交', async ({ page }) => {
   const course: Course = {
     id: 'course-1', code: 'SE-101', name: '软件工程导论', description: '需求与设计基础', semesterId: 'semester-1',
@@ -501,6 +631,48 @@ test('学生保存作业草稿、获取 Tutor 提示并正式提交', async ({ p
   await page.getByRole('dialog', { name: '提交作业' }).getByRole('button', { name: 'OK' }).click()
   await expect.poll(() => submitted).toBe(true)
   await expect(page.getByText('作业已提交')).toBeVisible()
+  await page.getByRole('button', { name: '开始重交' }).click()
+  await expect(page.getByRole('button', { name: '提交新尝试' })).toBeVisible()
+})
+
+test('学生在 debounce 前刷新后恢复最后一次编辑并补存服务器草稿', async ({ page }) => {
+  const course: Course = {
+    id: 'course-1', code: 'SE-101', name: '软件工程导论', description: '需求与设计基础', semesterId: 'semester-1',
+    semesterName: '2026 秋季', role: 'STUDENT', memberCount: 32, createdAt: now,
+  }
+  let draft: string | null = null
+  let writes = 0
+  await mockPlatform(page, 'student', [course], (path, method, request) => {
+    if (path === '/courses/course-1/assignments' && method === 'GET') return { data: pageOf([
+      { id: 'assignment-1', courseId: 'course-1', title: '需求分析作业', status: 'PUBLISHED', maxAttempts: 2 },
+    ]) }
+    if (path === '/assignments/assignment-1' && method === 'GET') return { data: {
+      id: 'assignment-1', courseId: 'course-1', title: '需求分析作业', status: 'PUBLISHED', maxAttempts: 2,
+      questions: [{ id: 'question-1', type: 'ANALYSIS', prompt: '说明用例的价值', points: 20, orderIndex: 1 }],
+    } }
+    if (path === '/assignments/assignment-1/submissions/me' && method === 'GET') return { data: draft
+      ? { id: 'submission-1', assignmentId: 'assignment-1', status: 'DRAFT', attemptNumber: 1,
+        answers: [{ questionId: 'question-1', answer: draft }], updatedAt: now } : null }
+    if (path === '/assignments/assignment-1/submissions/draft' && method === 'PUT') {
+      writes += 1
+      draft = request.postDataJSON().answers[0].answer
+      return { data: { id: 'submission-1', assignmentId: 'assignment-1', status: 'DRAFT',
+        attemptNumber: 1, answers: [{ questionId: 'question-1', answer: draft }], updatedAt: now } }
+    }
+    return undefined
+  })
+  await page.goto('/student/courses/course-1/assignments')
+  const input = page.getByPlaceholder('输入你的答案和推理过程')
+  await input.fill('最后一次修改')
+  expect(writes).toBe(0)
+  await page.reload()
+  await expect(input).toHaveValue('最后一次修改')
+  await expect.poll(() => draft).toBe('最后一次修改')
+  expect(writes).toBeGreaterThanOrEqual(1)
+  await input.fill('离开页面前的最后修改')
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '我的课程' }).click()
+  await expect(page).toHaveURL(/\/student$/)
+  expect(draft).toBe('离开页面前的最后修改')
 })
 
 test('教师配置题目、Rubric 与 Tutor 策略后发布作业', async ({ page }) => {
@@ -585,6 +757,42 @@ test('教师查看 AI 建议后确认最终成绩', async ({ page }) => {
   await dialog.getByRole('button', { name: '确认并发布' }).click()
   await expect.poll(() => confirmed).toBe(true)
   await expect(page.getByText('最终成绩已由教师确认')).toBeVisible()
+})
+
+test('Review 展示 Sonar 权威 finding、失败重试和加载错误', async ({ page }) => {
+  const course: Course = { id: 'course-1', code: 'SE-101', name: '软件工程导论', description: '', semesterId: 'semester-1', semesterName: '2026 秋季', role: 'TEACHER', memberCount: 2, createdAt: now }
+  let retried = false
+  let listFails = true
+  await mockPlatform(page, 'teacher', [course], (path, method) => {
+    if (path === '/courses/course-1/reviews' && method === 'GET') {
+      if (listFails) return { status: 503, body: JSON.stringify({ code: 'UNAVAILABLE', message: '评审服务暂不可用' }) }
+      return { data: pageOf([{ id: 'code-1', courseId: 'course-1', submissionId: 'sub-1', type: 'CODE', status: retried ? 'COMPLETED' : 'FAILED', errorMessage: retried ? undefined : '扫描失败', createdAt: now }]) }
+    }
+    if (path === '/courses/course-1/reviews/code-1/retry') {
+      retried = true
+      return { data: { id: 'code-1', courseId: 'course-1', submissionId: 'sub-1', type: 'CODE', status: 'COMPLETED', createdAt: now } }
+    }
+    if (path === '/courses/course-1/reviews/code-1/report') return { data: {
+      id: 'report-code', reviewJobId: 'code-1', summary: '静态扫描完成', generatedAt: now, result: {
+        sonar: { qualityGate: 'ERROR', projectKey: 'project', analysisId: 'scan' },
+        findings: [{ findingKey: 'finding-1', rule: 'python:S1764', type: 'BUG', severity: 'MAJOR', component: 'bad.py', line: 2, message: 'Identical operands' }],
+        analysis: { explanations: [{ findingKey: 'finding-1', explanation: '条件恒成立', impact: '分支无效', remediation: '比较不同操作数' }] },
+      },
+    } }
+    return undefined
+  })
+  await page.goto('/teacher/courses/course-1/reviews')
+  await expect(page.getByText('评审服务暂不可用')).toBeVisible()
+  listFails = false
+  await page.getByRole('button', { name: '重试加载', exact: true }).click()
+  await page.getByRole('tab', { name: '代码 Review' }).click()
+  await page.getByRole('button', { name: /代码提交 #sub-1/ }).click()
+  await page.getByRole('button', { name: '重试任务' }).click()
+  await page.getByRole('button', { name: /代码提交 #sub-1/ }).click()
+  await expect(page.getByText('Identical operands', { exact: true })).toBeVisible()
+  await expect(page.getByText('SonarQube Quality Gate: ERROR')).toBeVisible()
+  await expect(page.getByText('AI 解释：条件恒成立')).toBeVisible()
+  expect(retried).toBe(true)
 })
 
 test('管理员查看平台审计日志', async ({ page }) => {

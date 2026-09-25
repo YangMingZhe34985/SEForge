@@ -69,6 +69,10 @@ springdoc:
     path: /api-docs
 
 logging:
+  level:
+    # SDK retry warnings contain raw provider response bodies. Runtime traces
+    # record safe failure codes instead of these potentially sensitive bodies.
+    dev.langchain4j.internal.RetryUtils: ERROR
   pattern:
     level: "%5p [traceId=%X{traceId:-} requestId=%X{requestId:-}]"
 
@@ -97,17 +101,17 @@ seforge:
     timeout: ${SEFORGE_AI_TIMEOUT:45s}
     max-retries: ${SEFORGE_AI_MAX_RETRIES:3}
   storage:
-    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
-    access-key: ${MINIO_ACCESS_KEY:seforge}
-    secret-key: ${MINIO_SECRET_KEY:seforge-local-secret}
-    bucket: ${MINIO_BUCKET:seforge}
+    endpoint: ${MINIO_ENDPOINT:http://localhost:${MINIO_HOST_PORT:9000}}
+    access-key: ${MINIO_ACCESS_KEY:${MINIO_APP_ACCESS_KEY:seforge-app}}
+    secret-key: ${MINIO_SECRET_KEY:${MINIO_APP_SECRET_KEY:}}
+    bucket: ${MINIO_BUCKET:${MINIO_APP_BUCKET:seforge}}
     course-quota-bytes: ${SEFORGE_STORAGE_COURSE_QUOTA_BYTES:2147483648}
     attachment-user-quota-bytes: ${SEFORGE_STORAGE_ATTACHMENT_USER_QUOTA_BYTES:536870912}
     attachment-course-quota-bytes: ${SEFORGE_STORAGE_ATTACHMENT_COURSE_QUOTA_BYTES:2147483648}
   vector-store:
-    enabled: ${SEFORGE_VECTOR_STORE_ENABLED:false}
+    enabled: ${SEFORGE_VECTOR_STORE_ENABLED:${MILVUS_ENABLED:false}}
     host: ${MILVUS_HOST:localhost}
-    port: ${MILVUS_PORT:19530}
+    port: ${MILVUS_PORT:${MILVUS_HOST_PORT:19530}}
     collection-prefix: ${MILVUS_COLLECTION_PREFIX:${MILVUS_COLLECTION:seforge_chunks}}
     active-version: ${SEFORGE_VECTOR_ACTIVE_VERSION:}
     write-version: ${SEFORGE_VECTOR_WRITE_VERSION:}

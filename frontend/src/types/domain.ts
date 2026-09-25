@@ -366,6 +366,7 @@ export interface ReviewJob {
 }
 
 export interface RubricEvaluation {
+  problems?: string[]
   rubricItemId: string
   title: string
   suggestedScore: number
@@ -375,6 +376,12 @@ export interface RubricEvaluation {
 }
 
 export interface ReviewReport {
+  model?: string
+  promptVersion?: string
+  aiTraceId?: string
+  issues?: Array<{ code: string; severity: string; message: string; evidence: string; recommendation: string }>
+  sonar?: { qualityGate: string; projectKey: string; analysisId: string }
+  findings?: Array<{ findingKey: string; rule: string; type: string; severity: string; component: string; line?: number; message: string; explanation?: string; impact?: string; remediation?: string }>
   id: string
   jobId: string
   type: ReviewType

@@ -12,7 +12,11 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface SubmissionRepository extends JpaRepository<Submission, Long> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from Submission s where s.id = :id")
+    Optional<Submission> findForGrading(@Param("id") Long id);
     Optional<Submission> findByIdAndAssignmentIdAndUserId(Long id, Long assignmentId, Long userId);
+    Optional<Submission> findByAssignmentIdAndUserIdAndSubmissionKey(Long assignmentId, Long userId, String submissionKey);
     Optional<Submission> findFirstByAssignmentIdAndUserIdAndStatusOrderByAttemptNoDesc(
             Long assignmentId, Long userId, SubmissionStatus status);
     @Lock(LockModeType.PESSIMISTIC_WRITE)

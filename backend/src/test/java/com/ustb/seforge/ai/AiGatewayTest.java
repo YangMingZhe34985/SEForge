@@ -53,6 +53,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class AiGatewayTest {
+    @org.junit.jupiter.api.AfterEach
+    void closeGateway() { if (gateway != null) gateway.close(); }
     private final ModelRouter router = mock(ModelRouter.class);
     private final AiTraceService traces = mock(AiTraceService.class);
     private final AiTrace trace = mock(AiTrace.class);
@@ -101,6 +103,76 @@ class AiGatewayTest {
                 .isInstanceOf(AiUnavailableException.class)
                 .hasMessageContaining("invalid structured output");
         assertThat(model.invocations()).isEqualTo(2);
+    }
+
+    @Test
+    void rejectsNullMissingFieldsAndFailedBusinessValidation() {
+        for (String invalid : List.of("null", "{}", "{\"answer\":null}")) {
+            String envelope;
+            try { envelope = new ObjectMapper().writeValueAsString(java.util.Map.of("json", invalid)); }
+            catch (Exception e) { throw new AssertionError(e); }
+            ScriptedChatModel model = new ScriptedChatModel(envelope, envelope);
+            when(router.candidates(ModelCapability.REASONING)).thenReturn(List.of(endpoint("fake", model)));
+            assertThatThrownBy(() -> gateway.completeJson(request, StructuredAnswer.class)).isInstanceOf(AiUnavailableException.class);
+        }
+        ScriptedChatModel model = new ScriptedChatModel("{\"json\":\"{\\\"answer\\\":\\\"bad\\\"}\"}",
+                "{\"json\":\"{\\\"answer\\\":\\\"good\\\"}\"}");
+        when(router.candidates(ModelCapability.REASONING)).thenReturn(List.of(endpoint("fake", model)));
+        var result = gateway.completeJson(request, StructuredAnswer.class, value -> {
+            if (!"good".equals(value.answer())) throw new IllegalArgumentException("Rejected by business validator");
+        });
+        assertThat(result.answer()).isEqualTo("good");
+        assertThat(model.invocations()).isEqualTo(2);
+    }
+
+    @Test
+    void cancelIsOneTerminalAndLateProviderCallbacksAreIgnored() {
+        AtomicReference<StreamingChatResponseHandler> callback = new AtomicReference<>();
+        StreamingChatModel model = new StreamingChatModel() {
+            @Override public void doChat(ChatRequest request, StreamingChatResponseHandler handler) { callback.set(handler); }
+        };
+        when(router.candidates(ModelCapability.REASONING)).thenReturn(List.of(endpoint("fake", mock(ChatModel.class), model)));
+        AtomicInteger done = new AtomicInteger(), errors = new AtomicInteger(), cancelled = new AtomicInteger(), deltas = new AtomicInteger();
+        var handle = gateway.stream(request, x -> deltas.incrementAndGet(), x -> done.incrementAndGet(), x -> errors.incrementAndGet(), cancelled::incrementAndGet);
+        handle.cancel(); handle.cancel();
+        callback.get().onCompleteResponse(response("late"));
+        callback.get().onError(new RuntimeException("late"));
+        assertThat(handle.terminalState()).isEqualTo(com.ustb.seforge.ai.application.AiStreamHandle.TerminalState.CANCELLED);
+        assertThat(cancelled).hasValue(1);
+        assertThat(done).hasValue(0); assertThat(errors).hasValue(0); assertThat(deltas).hasValue(0);
+    }
+
+    @Test
+    void silentStreamTimesOutAndStartupRetriesAreBounded() throws Exception {
+        when(router.timeout()).thenReturn(java.time.Duration.ofMillis(30));
+        when(router.streamingRetries()).thenReturn(1);
+        StreamingChatModel silent = mock(StreamingChatModel.class);
+        when(router.candidates(ModelCapability.REASONING)).thenReturn(List.of(endpoint("silent", mock(ChatModel.class), silent)));
+        var terminal = new java.util.concurrent.CountDownLatch(1);
+        AtomicInteger errors = new AtomicInteger();
+        var handle = gateway.stream(request, x -> {}, x -> {}, x -> { errors.incrementAndGet(); terminal.countDown(); });
+        assertThat(terminal.await(3, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        assertThat(errors).hasValue(1);
+        assertThat(handle.terminalState()).isEqualTo(com.ustb.seforge.ai.application.AiStreamHandle.TerminalState.ERROR);
+        verify(silent, org.mockito.Mockito.times(2)).chat(any(ChatRequest.class), any(StreamingChatResponseHandler.class));
+    }
+
+    @Test
+    void streamInterruptionAfterDeltaDoesNotFallbackAndDoneCannotBeCancelled() {
+        StreamingChatModel broken = new StreamingChatModel() {
+            @Override public void doChat(ChatRequest request, StreamingChatResponseHandler handler) {
+                handler.onPartialResponse(new PartialResponse("first"), new PartialResponseContext(new TestStreamingHandle()));
+                handler.onError(new RuntimeException("network interrupted"));
+                handler.onCompleteResponse(response("late"));
+            }
+        };
+        when(router.candidates(ModelCapability.REASONING)).thenReturn(List.of(endpoint("broken", mock(ChatModel.class), broken)));
+        AtomicInteger done = new AtomicInteger(), errors = new AtomicInteger();
+        var handle = gateway.stream(request, x -> {}, x -> done.incrementAndGet(), x -> errors.incrementAndGet());
+        assertThat(errors).hasValue(1); assertThat(done).hasValue(0);
+        assertThat(handle.terminalState()).isEqualTo(com.ustb.seforge.ai.application.AiStreamHandle.TerminalState.ERROR);
+        handle.cancel();
+        assertThat(handle.isCancelled()).isFalse();
     }
 
     @Test
@@ -278,6 +350,33 @@ class AiGatewayTest {
                         && calls.get(0).name().equals("read_bound_context")
                         && calls.get(0).status() == AiToolCall.Status.SUCCEEDED));
     }
+
+    @Test
+    void aiServicesExecutesThePublicAuthorizedToolRuntime() {
+        var runtime = new com.ustb.seforge.ai.tool.AuthorizedToolRuntime(new ObjectMapper());
+        try {
+            var spec = dev.langchain4j.agent.tool.ToolSpecification.builder().name("read_bound_context")
+                    .description("Read authorized context")
+                    .parameters(dev.langchain4j.model.chat.request.json.JsonObjectSchema.builder().build()).build();
+            AtomicInteger checks = new AtomicInteger();
+            var definition = new com.ustb.seforge.ai.tool.ToolDefinition<>(spec, "v1", EmptyInput.class,
+                    context -> checks.incrementAndGet(), (context, ignored) -> "course-" + context.courseId());
+            var scope = new com.ustb.seforge.ai.tool.ToolContext(7L, 9L, null, null, null,
+                    Set.of("read_bound_context"), "req", "trace");
+            var session = runtime.open(scope, List.of(definition), 4, java.time.Duration.ofSeconds(1));
+            when(router.candidates(ModelCapability.REASONING)).thenReturn(List.of(endpoint("fake", new ToolCallingModel())));
+            assertThat(gateway.completeWithTools(request, Set.of("read_bound_context"), session).response().text())
+                    .isEqualTo("authorized answer");
+            assertThat(checks).hasValue(1);
+            assertThat(session.recordedToolCalls()).singleElement().satisfies(call -> {
+                assertThat(call.toolVersion()).isEqualTo("v1"); assertThat(call.resultCount()).isEqualTo(1);
+            });
+            assertThatThrownBy(() -> gateway.completeWithTools(new AiRequest(ModelCapability.REASONING,
+                    99L, 9L, "test:v1", "", "q"), Set.of(), session)).hasMessage("FORBIDDEN");
+        } finally { runtime.close(); }
+    }
+
+    public record EmptyInput() {}
 
     private AiModelEndpoint endpoint(String provider, ChatModel model) {
         return new AiModelEndpoint(provider, provider + "-model", model, mock(StreamingChatModel.class));

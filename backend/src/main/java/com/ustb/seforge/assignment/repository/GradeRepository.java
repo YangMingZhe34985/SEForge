@@ -9,6 +9,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface GradeRepository extends JpaRepository<Grade, Long> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select g from Grade g where g.submissionId = :submissionId")
+    Optional<Grade> findForUpdate(@org.springframework.data.repository.query.Param("submissionId") Long submissionId);
     Optional<Grade> findBySubmissionId(Long submissionId);
     List<Grade> findAllByCourseIdAndStatus(Long courseId, GradeStatus status);
     List<Grade> findAllByStudentIdAndCourseIdOrderByUpdatedAtDesc(Long studentId, Long courseId);

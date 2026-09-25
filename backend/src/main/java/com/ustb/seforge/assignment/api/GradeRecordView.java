@@ -18,5 +18,10 @@ public record GradeRecordView(
         BigDecimal aiSuggestedScore,
         String model,
         String promptVersion,
-        String overrideReason) {
+        String overrideReason,
+        Long graderId,
+        Long aiTraceId,
+        java.util.List<Item> rubricItems) {
+    public record Item(Long rubricItemId, String source, BigDecimal suggestedScore,
+                       BigDecimal finalScore, String feedback, Long authorId) {}
 }

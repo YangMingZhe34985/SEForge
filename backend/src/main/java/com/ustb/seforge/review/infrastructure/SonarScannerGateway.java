@@ -322,7 +322,9 @@ public class SonarScannerGateway implements SonarGateway {
             HttpClient client = HttpClient.newBuilder().connectTimeout(settings.apiTimeout())
                     .followRedirects(HttpClient.Redirect.NEVER).build();
             String analysisId = awaitComputeTask(client, settings, computeTaskId);
-            List<ExternalSonarFinding> findings = issues(client, settings, projectKey);
+            List<ExternalSonarFinding> findings = new ArrayList<>(issues(client, settings, projectKey));
+            findings.addAll(hotspots(client, settings, projectKey));
+            if (findings.size() > settings.maxFindings()) throw new SonarGatewayException("Combined Sonar findings exceed safe limit");
             Map<String, String> measures = measures(client, settings, projectKey);
             String qualityGate = qualityGate(client, settings, analysisId);
             return new ServerResult(analysisId, qualityGate, measures, findings);
@@ -407,6 +409,31 @@ public class SonarScannerGateway implements SonarGateway {
             String message = required(issue, "message", "finding message", 2_000);
             Integer line = issue.hasNonNull("line") ? Math.max(0, issue.path("line").asInt()) : null;
             return new ExternalSonarFinding(key, rule, type, severity, component, line, message);
+        }
+
+        private List<ExternalSonarFinding> hotspots(HttpClient client, Settings settings, String projectKey) {
+            List<ExternalSonarFinding> findings = new ArrayList<>();
+            Set<String> keys = new HashSet<>();
+            int expected = -1;
+            for (int page = 1; ; page++) {
+                JsonNode response = get(client, settings, "api/hotspots/search?projectKey=" + encode(projectKey) + "&ps=100&p=" + page);
+                int total = response.path("paging").path("total").asInt(-1);
+                if (total < 0 || total > settings.maxFindings() || (expected >= 0 && total != expected)
+                        || !response.path("hotspots").isArray()) throw new SonarGatewayException("SonarQube hotspot pagination is invalid");
+                expected = total;
+                for (JsonNode hotspot : response.path("hotspots")) {
+                    String key = required(hotspot, "key", "hotspot key", 100);
+                    if (!keys.add(key)) throw new SonarGatewayException("SonarQube returned duplicate hotspot keys");
+                    JsonNode detail = get(client, settings, "api/hotspots/show?hotspot=" + encode(key));
+                    findings.add(new ExternalSonarFinding(key, required(detail.path("rule"), "key", "hotspot rule", 150),
+                            "SECURITY_HOTSPOT", required(hotspot, "vulnerabilityProbability", "hotspot priority", 32),
+                            required(hotspot, "component", "hotspot component", 500),
+                            hotspot.hasNonNull("line") ? hotspot.path("line").asInt() : null,
+                            required(hotspot, "message", "hotspot message", 2000)));
+                }
+                if (findings.size() == expected) return List.copyOf(findings);
+                if (response.path("hotspots").isEmpty() || findings.size() > expected) throw new SonarGatewayException("SonarQube hotspot pagination was incomplete");
+            }
         }
 
         private Map<String, String> measures(HttpClient client, Settings settings, String projectKey) {

@@ -9,6 +9,17 @@ import org.junit.jupiter.api.Test;
 
 class ModelRegistryTest {
     @Test
+    void invalidProviderConfigurationDoesNotPreventConstruction() {
+        SEForgeProperties properties = new SEForgeProperties();
+        properties.getAi().setEnabled(true);
+        properties.getAi().setDeepseekApiKey("stub-only");
+        properties.getAi().setFastModel(null);
+        properties.getAi().setReasoningModel(null);
+        properties.getAi().setCodingModel(null);
+        ModelRegistry registry = new ModelRegistry(properties);
+        assertThat(registry.available(ModelCapability.FAST)).isFalse();
+    }
+    @Test
     void disabledAiCreatesNoRemoteClientsAndHasNoCandidates() {
         SEForgeProperties properties = new SEForgeProperties();
         properties.getAi().setEnabled(false);

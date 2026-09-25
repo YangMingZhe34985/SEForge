@@ -18,6 +18,9 @@ const report = ref<ReviewReport | null>(null)
 const selectedJobId = ref<string | null>(null)
 const loading = ref(false)
 const submitting = ref(false)
+const pageError = ref('')
+const reportError = ref('')
+const confirmingGrade = ref(false)
 const jobPage = ref(0)
 const jobSize = 20
 const jobTotal = ref(0)
@@ -64,6 +67,7 @@ async function loadJobs(silent = false) {
     return
   }
   if (!silent) loading.value = true
+  if (!silent) pageError.value = ''
   try {
     const result = await reviewApi.list(requestedCourseId, requestedType, requestedPage, jobSize)
     if (courseVersion !== courseGeneration || requestVersion !== jobsRequestGeneration
@@ -76,7 +80,7 @@ async function loadJobs(silent = false) {
     }
   } catch (error) {
     if (!silent && courseVersion === courseGeneration && requestVersion === jobsRequestGeneration) {
-      ElMessage.error(error instanceof Error ? error.message : '评审任务加载失败')
+      pageError.value = error instanceof Error ? error.message : '评审任务加载失败或无权限'
     }
   }
   finally {
@@ -90,6 +94,7 @@ async function loadReport(job: ReviewJob) {
   const requestVersion = ++reportRequestGeneration
   if (!requestedCourseId) return
   loading.value = true
+  reportError.value = ''
   try {
     const result = await reviewApi.report(requestedCourseId, job)
     if (courseVersion === courseGeneration && requestVersion === reportRequestGeneration
@@ -97,7 +102,7 @@ async function loadReport(job: ReviewJob) {
   }
   catch (error) {
     if (courseVersion === courseGeneration && requestVersion === reportRequestGeneration) {
-      ElMessage.error(error instanceof Error ? error.message : '报告加载失败')
+      reportError.value = error instanceof Error ? error.message : '报告加载失败或无权限'
     }
   }
   finally {
@@ -226,6 +231,7 @@ function syncGradeTotal() {
 }
 
 async function confirmGrade() {
+  if (confirmingGrade.value) return
   if (!selectedJob.value?.submissionId) return ElMessage.warning('评审任务未关联提交记录')
   const courseVersion = courseGeneration
   const reviewJobId = selectedJob.value.id
@@ -235,6 +241,7 @@ async function confirmGrade() {
   if ((totalChanged || itemChanged) && !gradeForm.reason.trim()) {
     return ElMessage.warning('覆盖 AI 建议总分或分项分数时必须填写修改理由')
   }
+  confirmingGrade.value = true
   try {
     await reviewApi.confirmGrade(
       submissionId,
@@ -242,11 +249,13 @@ async function confirmGrade() {
       gradeForm.feedback,
       gradeForm.reason || undefined,
       gradeRubricItems.value.map((item) => ({ rubricItemId: item.rubricItemId, score: item.score, feedback: item.feedback })),
+      report.value?.aiTraceId,
     )
     if (courseVersion !== courseGeneration || selectedJob.value?.id !== reviewJobId) return
     gradeVisible.value = false
     ElMessage.success('最终成绩已由教师确认')
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '成绩确认失败') }
+  finally { confirmingGrade.value = false }
 }
 
 async function loadDocuments() {
@@ -326,6 +335,9 @@ function activateCourse() {
   teacherSubmissions.value = []
   loading.value = false
   submitting.value = false
+  gradeVisible.value = false
+  pageError.value = ''
+  reportError.value = ''
   void loadDocuments()
   void loadAssignments()
   void loadJobs()
@@ -344,7 +356,7 @@ watch(selectedAssignmentId, loadSubmissions)
 onMounted(() => {
   activateCourse()
   pollTimer = setInterval(() => {
-    if (jobs.value.some((job) => ['QUEUED', 'RUNNING', 'PROCESSING'].includes(job.status))) void loadJobs(true)
+    if (jobs.value.some((job) => ['QUEUED', 'RUNNING', 'PROCESSING', 'RETRY_WAIT'].includes(job.status))) void loadJobs(true)
   }, 5000)
 })
 onBeforeUnmount(() => {
@@ -367,6 +379,7 @@ onBeforeUnmount(() => {
       <el-tab-pane label="作业 Review" name="ASSIGNMENT" />
       <el-tab-pane label="代码 Review" name="CODE" />
     </el-tabs>
+    <el-alert v-if="pageError" :title="pageError" type="error" :closable="false"><el-button @click="loadJobs()">重试加载</el-button></el-alert>
 
     <section class="review-layout">
       <div class="stack">
@@ -400,7 +413,8 @@ onBeforeUnmount(() => {
           <div v-if="jobs.length" class="job-list" v-loading="loading">
             <button v-for="job in jobs" :key="job.id" type="button" :class="{ active: job.id === selectedJobId }" @click="selectJob(job)"><div><strong>{{ job.subjectName }}</strong><StatusBadge :status="job.status" /></div><small>{{ new Date(job.createdAt).toLocaleString() }}</small><p v-if="job.errorMessage" class="danger-text">{{ job.errorMessage }}</p></button>
           </div>
-          <EmptyState v-else title="暂无评审任务" />
+          <div v-else-if="loading" v-loading="true" style="min-height: 100px" />
+          <EmptyState v-else-if="!pageError" title="暂无评审任务" />
           <el-pagination
             v-if="jobTotal > jobSize"
             class="job-pagination"
@@ -416,11 +430,25 @@ onBeforeUnmount(() => {
       <section class="panel report-panel">
         <div class="panel__header"><div><h2>结构化报告</h2><span v-if="selectedJob" class="muted">{{ selectedJob.subjectName }}</span></div><div class="button-row"><el-button v-if="selectedJob && ['QUEUED', 'PROCESSING', 'RUNNING'].includes(selectedJob.status)" type="warning" plain @click="cancelSelected">取消任务</el-button><el-button v-if="selectedJob && ['FAILED', 'CANCELLED'].includes(selectedJob.status)" :loading="submitting" @click="retrySelected">重试任务</el-button><el-button v-if="report" @click="exportReport">导出 JSON</el-button><el-button v-if="canConfirmGrade && report?.scoreSuggestion !== undefined && selectedJob?.type === 'ASSIGNMENT'" type="primary" @click="openGradeDialog">教师确认成绩</el-button></div></div>
         <div v-if="report" class="panel__body report-content">
+          <p class="muted">{{ report.model }} · {{ report.promptVersion }}<template v-if="report.aiTraceId"> · Trace #{{ report.aiTraceId }}</template></p>
+          <el-alert v-if="report.sonar" :title="`SonarQube Quality Gate: ${report.sonar.qualityGate}`" type="info" :closable="false" />
+          <article v-for="finding in report.findings" :key="finding.findingKey" class="report-section">
+            <h3>Sonar finding · {{ finding.rule }} · {{ finding.severity }}</h3>
+            <p>{{ finding.component }}<template v-if="finding.line">:{{ finding.line }}</template> · {{ finding.type }}</p>
+            <p>{{ finding.message }}</p><small>{{ finding.findingKey }}</small>
+            <p><strong>AI 解释：</strong>{{ finding.explanation }}</p>
+            <p><strong>影响：</strong>{{ finding.impact }}</p><p><strong>修复建议：</strong>{{ finding.remediation }}</p>
+          </article>
+          <article v-for="issue in report.issues" :key="issue.code" class="report-section">
+            <h3>{{ issue.severity }} · {{ issue.message }}</h3><p>依据：{{ issue.evidence }}</p><p>建议：{{ issue.recommendation }}</p>
+          </article>
           <div v-if="report.scoreSuggestion !== undefined" class="score-suggestion"><span>AI 建议分</span><strong>{{ report.scoreSuggestion }}</strong><small>非最终成绩</small></div>
           <h3>评审摘要</h3><p>{{ report.summary }}</p>
           <template v-for="section in ([['完整性', report.completeness], ['一致性', report.consistency], ['可验证性', report.testability], ['清晰度', report.clarity], ['改进建议', report.suggestions]] as const)" :key="section[0]"><div v-if="section[1]?.length" class="report-section"><h3>{{ section[0] }}</h3><ul><li v-for="item in section[1]" :key="item">{{ item }}</li></ul></div></template>
-          <div v-if="report.rubricItems?.length" class="rubric-list"><h3>Rubric 分项</h3><article v-for="item in report.rubricItems" :key="item.rubricItemId"><div><strong>{{ item.title }}</strong><span>{{ item.suggestedScore }}<template v-if="item.maxScore !== undefined"> / {{ item.maxScore }}</template></span></div><p>{{ item.evidence }}</p><small>{{ item.feedback }}</small></article></div>
+          <div v-if="report.rubricItems?.length" class="rubric-list"><h3>Rubric 分项</h3><article v-for="item in report.rubricItems" :key="item.rubricItemId"><div><strong>{{ item.title }}</strong><span>{{ item.suggestedScore }}<template v-if="item.maxScore !== undefined"> / {{ item.maxScore }}</template></span></div><p>{{ item.evidence }}</p><p v-for="problem in item.problems" :key="problem">问题：{{ problem }}</p><small>{{ item.feedback }}</small></article></div>
         </div>
+        <el-alert v-else-if="reportError" :title="reportError" type="error" :closable="false"><el-button v-if="selectedJob" @click="loadReport(selectedJob)">重试加载报告</el-button></el-alert>
+        <el-alert v-else-if="selectedJob?.status === 'FAILED'" :title="selectedJob.errorMessage || '评审失败，可重试'" type="error" :closable="false" />
         <EmptyState v-else :title="selectedJob?.status === 'COMPLETED' ? '选择或加载报告' : '报告尚未生成'" :description="selectedJob ? '任务完成后将在这里展示结构化结果。' : '从左侧选择一个任务。'" />
       </section>
     </section>

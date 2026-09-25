@@ -44,6 +44,23 @@ class CourseQaStreamServiceTest {
     @Mock AiGateway ai;
 
     @Test
+    void retrievalFailureEmitsDiagnosticTerminalWithoutCallingAiOrSavingAnswer() {
+        var service = new CourseQaStreamService(conversations, knowledge, prompts, ai, Runnable::run);
+        var conversation = new ConversationView(21L,11L,"Question",ConversationStatus.ACTIVE,null,Instant.now(),Instant.now());
+        when(conversations.addQuestion(11L,21L,7L,"infra-1","question"))
+                .thenReturn(new ConversationService.QuestionContext(conversation,31L,"",false));
+        when(knowledge.search(11L,"question",5)).thenThrow(new com.ustb.seforge.common.exception.AppException(
+                com.ustb.seforge.common.exception.ErrorCode.VECTOR_STORE_UNAVAILABLE, "Milvus unavailable"));
+        var emitter = service.open(11L,21L,7L,new AskQuestionRequest("infra-1","question"));
+        assertThat(events(emitter)).extracting(ObservedEvent::type).containsExactly("error");
+        Set<?> pending = (Set<?>) ReflectionTestUtils.getField(emitter, "earlySendAttempts");
+        assertThat(pending.stream().map(item -> String.valueOf(ReflectionTestUtils.getField(item, "data")))
+                .collect(java.util.stream.Collectors.joining())).contains("VECTOR_STORE_UNAVAILABLE", "Milvus unavailable");
+        org.mockito.Mockito.verifyNoInteractions(ai);
+        org.mockito.Mockito.verify(conversations,org.mockito.Mockito.never()).addAssistant(any(),any(),any(),any(),any(),any());
+    }
+
+    @Test
     void providerCannotEmitASecondTerminalEvent() {
         TaskExecutor sameThread = Runnable::run;
         CourseQaStreamService service = new CourseQaStreamService(
@@ -57,7 +74,7 @@ class CourseQaStreamServiceTest {
         KnowledgeEvidence evidence = new KnowledgeEvidence("v1", 41L, 51L, null,
                 "notes.pdf", 3, "Design", "High cohesion keeps responsibilities focused.", 0.91);
         when(knowledge.search(11L, request.content(), 5)).thenReturn(List.of(evidence));
-        when(prompts.load("course-qa", "v1")).thenReturn(new PromptTemplate("course-qa", "v1", "system"));
+        when(prompts.load("course-qa", "v2")).thenReturn(new PromptTemplate("course-qa", "v2", "system"));
         MessageView saved = new MessageView(61L, MessageRole.ASSISTANT, "Focused responsibilities.",
                 MessageStatus.COMPLETE, List.of(), Instant.now());
         when(conversations.addAssistant(eq(11L), eq(21L), eq(7L), any(), any(), any()))
@@ -102,6 +119,46 @@ class CourseQaStreamServiceTest {
             }
         }
         return events;
+    }
+
+    @Test
+    void cancellationBeatsLateProviderCompletionAndNeverPersistsPrefix() {
+        var service = new CourseQaStreamService(conversations, knowledge, prompts, ai, Runnable::run);
+        var conversation = new ConversationView(21L,11L,"Question",ConversationStatus.ACTIVE,null,Instant.now(),Instant.now());
+        when(conversations.addQuestion(11L,21L,7L,"cancel-1","cohesion"))
+                .thenReturn(new ConversationService.QuestionContext(conversation,31L,"",false));
+        when(knowledge.search(11L,"cohesion",5)).thenReturn(List.of(new KnowledgeEvidence("v",41L,51L,null,"a.txt",0,"Text","cohesion",1.0)));
+        when(prompts.load("course-qa","v2")).thenReturn(new PromptTemplate("course-qa","v2","system"));
+        var handle = mock(AiStreamHandle.class);
+        when(ai.stream(any(),any(),any(),any())).thenAnswer(call -> {
+            Consumer<String> delta = call.getArgument(1);
+            Consumer<AiResponse> complete = call.getArgument(2);
+            Consumer<Throwable> error = call.getArgument(3);
+            delta.accept("unfinished prefix");
+            service.cancel(7L,"cancel-1");
+            complete.accept(new AiResponse("unfinished prefix","stub","stub",1,1));
+            error.accept(new IllegalStateException("late error containing sensitive internals"));
+            delta.accept("late delta");
+            return handle;
+        });
+        var observed = events(service.open(11L,21L,7L,new AskQuestionRequest("cancel-1","cohesion")));
+        assertThat(observed).extracting(ObservedEvent::type).containsExactly("citation","message.delta","error");
+        org.mockito.Mockito.verify(conversations,org.mockito.Mockito.never()).addAssistant(any(),any(),any(),any(),any(),any());
+        org.mockito.Mockito.verify(handle).cancel();
+    }
+
+    @Test
+    void noEvidenceRefusesWithoutCallingChatModel() {
+        var service = new CourseQaStreamService(conversations,knowledge,prompts,ai,Runnable::run);
+        var conversation = new ConversationView(21L,11L,"Question",ConversationStatus.ACTIVE,null,Instant.now(),Instant.now());
+        when(conversations.addQuestion(11L,21L,7L,"refuse-1","unknown"))
+                .thenReturn(new ConversationService.QuestionContext(conversation,31L,"",false));
+        when(knowledge.search(11L,"unknown",5)).thenReturn(List.of());
+        when(conversations.addAssistant(eq(11L),eq(21L),eq(7L),any(),org.mockito.ArgumentMatchers.isNull(),eq(List.of())))
+                .thenReturn(new MessageView(61L,MessageRole.ASSISTANT,"refusal",MessageStatus.COMPLETE,List.of(),Instant.now()));
+        assertThat(events(service.open(11L,21L,7L,new AskQuestionRequest("refuse-1","unknown"))))
+                .extracting(ObservedEvent::type).containsExactly("message.delta","done");
+        org.mockito.Mockito.verifyNoInteractions(ai,prompts);
     }
 
     private record ObservedEvent(String type, String requestId) {

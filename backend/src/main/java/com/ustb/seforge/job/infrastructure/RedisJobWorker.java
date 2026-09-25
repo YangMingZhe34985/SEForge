@@ -40,7 +40,10 @@ public class RedisJobWorker {
     private final StringRedisTemplate redis;
     private final SEForgeProperties properties;
     private final Map<JobKind, JobHandler> handlers;
+    private final com.ustb.seforge.job.service.JobExecutionAuthorizer authorization;
     private final String workerId = "worker-" + UUID.randomUUID();
+    @org.springframework.beans.factory.annotation.Value("${seforge.jobs.read-batch-size:5}")
+    private int readBatchSize = 5;
     private final ScheduledExecutorService leaseHeartbeat = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "seforge-job-lease-heartbeat");
         thread.setDaemon(true);
@@ -48,10 +51,11 @@ public class RedisJobWorker {
     });
 
     public RedisJobWorker(AsyncJobService jobs, StringRedisTemplate redis, SEForgeProperties properties,
-                          List<JobHandler> handlers) {
+                          List<JobHandler> handlers, com.ustb.seforge.job.service.JobExecutionAuthorizer authorization) {
         this.jobs = jobs;
         this.redis = redis;
         this.properties = properties;
+        this.authorization = authorization;
         this.handlers = handlers.stream().collect(Collectors.toMap(JobHandler::kind,
                 Function.identity(), (left, right) -> left, () -> new EnumMap<>(JobKind.class)));
     }
@@ -79,10 +83,13 @@ public class RedisJobWorker {
         try {
             records = redis.opsForStream().read(
                     Consumer.from(properties.getJobs().getGroup(), workerId),
-                    StreamReadOptions.empty().count(5).block(Duration.ofMillis(100)),
+                    StreamReadOptions.empty().count(Math.max(1, Math.min(readBatchSize, 100))).block(Duration.ofMillis(100)),
                     StreamOffset.create(properties.getJobs().getStream(), ReadOffset.lastConsumed()));
         } catch (RuntimeException exception) {
             log.warn("Job stream unavailable: {}", exception.getMessage());
+            // Redis may have restarted without its stream/group. Durable jobs are
+            // redelivered by DB recovery; recreate the group without restarting us.
+            ensureGroup();
             return;
         }
         if (records == null) return;
@@ -126,6 +133,7 @@ public class RedisJobWorker {
         }, heartbeatMillis, heartbeatMillis, TimeUnit.MILLISECONDS);
         JobHandler handler = handlers.get(job.kind());
         try {
+            authorization.authorize(job);
             if (handler == null) {
                 jobs.fail(job.id(), workerId,
                         new IllegalStateException("No handler registered for " + job.kind()));
@@ -135,7 +143,7 @@ public class RedisJobWorker {
                 log.warn("Discarded completion for job {} because its lease is no longer owned", job.id());
             }
         } catch (Exception exception) {
-            log.warn("Job {} attempt {} failed", job.id(), job.attempt(), exception);
+            log.warn("Job {} attempt {} failed ({})", job.id(), job.attempt(), exception.getClass().getSimpleName());
             if (!jobs.fail(job.id(), workerId, exception)) {
                 log.warn("Discarded failure for job {} because its lease is no longer owned", job.id());
             }

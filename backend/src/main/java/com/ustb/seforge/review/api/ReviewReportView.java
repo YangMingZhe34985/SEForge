@@ -15,13 +15,14 @@ public record ReviewReportView(
         JsonNode result,
         String model,
         String promptVersion,
-        Instant generatedAt) {
+        Instant generatedAt,
+        Long aiTraceId) {
     public static ReviewReportView from(ReviewReport report, ObjectMapper objectMapper) {
         try {
             return new ReviewReportView(report.getId(), report.getReviewJobId(), report.getCourseId(),
                     report.getStatus(), report.getSummary(),
                     objectMapper.readTree(report.getStructuredResultJson()), report.getModelName(),
-                    report.getPromptVersion(), report.getGeneratedAt());
+                    report.getPromptVersion(), report.getGeneratedAt(), report.getAiTraceId());
         } catch (Exception exception) {
             throw new IllegalStateException("Stored review report is not valid JSON", exception);
         }

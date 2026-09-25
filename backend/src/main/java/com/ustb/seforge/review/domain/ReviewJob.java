@@ -81,6 +81,11 @@ public class ReviewJob extends BaseEntity {
         this.errorMessage = null;
     }
 
+    public void retryAs(Long actorId, Long asyncJobId) {
+        requestedBy = actorId;
+        attachAsyncJob(asyncJobId);
+    }
+
     public void start() {
         status = ReviewJobStatus.PROCESSING;
         errorCode = null;
@@ -101,12 +106,17 @@ public class ReviewJob extends BaseEntity {
     }
 
     public void fail(String code, Throwable failure) {
-        if (status == ReviewJobStatus.CANCELLED) return;
+        if (status == ReviewJobStatus.CANCELLED || status == ReviewJobStatus.COMPLETED) return;
         status = ReviewJobStatus.FAILED;
         errorCode = code == null || code.isBlank() ? "REVIEW_FAILED" : code;
-        String message = failure == null || failure.getMessage() == null
-                ? "Review failed" : failure.getMessage();
-        errorMessage = message.substring(0, Math.min(message.length(), 4000));
+        errorMessage = switch (errorCode) {
+            case "SONAR_TOKEN_MISSING" -> "SonarQube 未配置分析 Token，请配置 worker 的 SEFORGE_SONAR_TOKEN 后重试";
+            case "SONAR_SCANNER_MISSING" -> "SonarScanner 未配置，请使用包含 scanner 的受限网络 worker";
+            case "SONAR_URL_INVALID" -> "SonarQube 地址无效，请检查 worker 的 SEFORGE_SONAR_SERVER_URL";
+            case "SONAR_DISABLED" -> "Code Review 未启用，请配置 SonarQube 后启用 SEFORGE_SONAR_ENABLED";
+            case "SONAR_FAILED" -> "Static analysis failed; check the scanner service and retry";
+            default -> "Review failed validation or a dependency was unavailable; retry after checking the input";
+        };
     }
 
     public Long getCourseId() { return courseId; }

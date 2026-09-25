@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class PromptCatalog {
     public PromptTemplate load(String name, String version) {
+        if (name == null || version == null || !name.matches("[a-z0-9-]{1,80}")
+                || !version.matches("v[0-9]{1,6}")) throw new IllegalArgumentException("Invalid prompt identifier");
         String resourceName = "prompts/" + name + "/" + version + ".txt";
         try {
             ClassPathResource resource = new ClassPathResource(resourceName);

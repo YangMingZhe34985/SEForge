@@ -10,6 +10,7 @@ import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.MetadataFilterBuilder;
 import dev.langchain4j.store.embedding.milvus.MilvusEmbeddingStore;
 import io.milvus.client.MilvusServiceClient;
+import io.milvus.common.clientenum.ConsistencyLevelEnum;
 import io.milvus.orm.iterator.QueryIterator;
 import io.milvus.param.ConnectParam;
 import io.milvus.param.R;
@@ -72,6 +73,7 @@ public class MilvusVectorIndex implements VectorIndex {
         requireCourse(courseId);
         Filter tenantAndVersion = MetadataFilterBuilder.metadataKey("courseId").isEqualTo(courseId)
                 .and(MetadataFilterBuilder.metadataKey("embeddingVersion").isEqualTo(version));
+        try {
         return handle(version).store().search(EmbeddingSearchRequest.builder()
                         .queryEmbedding(query)
                         .maxResults(Math.min(Math.max(limit, 1), 20))
@@ -81,6 +83,9 @@ public class MilvusVectorIndex implements VectorIndex {
                 .map(match -> new VectorHit(match.embeddingId(), match.score(), match.embedded().text(),
                         match.embedded().metadata().toMap()))
                 .toList();
+        } catch (RuntimeException failure) {
+            throw unavailable(failure);
+        }
     }
 
     @Override
@@ -108,6 +113,7 @@ public class MilvusVectorIndex implements VectorIndex {
                 .withExpr(expression)
                 .withOutFields(List.of(ID_FIELD))
                 .withBatchSize((long) pageSize)
+                .withConsistencyLevel(ConsistencyLevelEnum.STRONG)
                 .build());
         ensureSuccess(response, "Could not scan Milvus vector ids");
 
@@ -133,7 +139,9 @@ public class MilvusVectorIndex implements VectorIndex {
         String version = validateVersion(embeddingVersion);
         requireCourse(courseId);
         if (ids == null || ids.isEmpty()) return;
-        handle(version).store().removeAll(List.copyOf(ids));
+        Set<String> owned = listIds(version, courseId);
+        List<String> scoped = ids.stream().filter(owned::contains).distinct().toList();
+        if (!scoped.isEmpty()) handle(version).store().removeAll(scoped);
     }
 
     @Override
@@ -151,9 +159,24 @@ public class MilvusVectorIndex implements VectorIndex {
 
     private StoreHandle handle(String version) {
         if (!properties.getVectorStore().isEnabled()) {
-            throw new AiUnavailableException("Milvus vector index is disabled");
+            throw unavailable(null);
         }
-        return stores.computeIfAbsent(version, this::createHandle);
+        try {
+            return stores.computeIfAbsent(version, this::createHandle);
+        } catch (RuntimeException failure) {
+            throw unavailable(failure);
+        }
+    }
+
+    private com.ustb.seforge.common.exception.AppException unavailable(RuntimeException failure) {
+        String reason = !properties.getVectorStore().isEnabled() ? "DISABLED" : "CONNECTION_OR_INDEX";
+        org.slf4j.LoggerFactory.getLogger(MilvusVectorIndex.class).warn(
+                "Milvus unavailable: reason={} exception={}", reason,
+                failure == null ? "none" : failure.getClass().getSimpleName());
+        return new com.ustb.seforge.common.exception.AppException(
+                com.ustb.seforge.common.exception.ErrorCode.VECTOR_STORE_UNAVAILABLE,
+                "Milvus 检索不可用（" + reason + "），请检查向量开关、MILVUS_HOST/端口映射与索引状态",
+                java.util.Map.of("component", "MILVUS", "reason", reason));
     }
 
     private StoreHandle createHandle(String version) {
@@ -164,14 +187,22 @@ public class MilvusVectorIndex implements VectorIndex {
                 .withConnectTimeout(5, TimeUnit.SECONDS)
                 .build();
         MilvusServiceClient client = new MilvusServiceClient(connect);
+        try {
         EmbeddingStore<TextSegment> store = MilvusEmbeddingStore.builder()
                 .milvusClient(client)
                 .collectionName(collectionName)
                 .dimension(properties.getAi().getEmbeddingDimension())
                 .retrieveEmbeddingsOnSearch(false)
-                .autoFlushOnInsert(true)
+                // Strong reads see acknowledged inserts/deletes, including growing segments.
+                // Per-batch flush is unnecessary and hits Milvus' default flush rate limit.
+                .consistencyLevel(ConsistencyLevelEnum.STRONG)
+                .autoFlushOnInsert(false)
                 .build();
         return new StoreHandle(collectionName, client, store);
+        } catch (RuntimeException failure) {
+            try { client.close(3); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            throw failure;
+        }
     }
 
     private void ensureSuccess(R<?> response, String message) {

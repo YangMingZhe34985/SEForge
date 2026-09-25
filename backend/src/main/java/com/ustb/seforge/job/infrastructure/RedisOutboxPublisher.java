@@ -41,7 +41,7 @@ public class RedisOutboxPublisher {
     }
 
     @Scheduled(fixedDelayString = "${seforge.jobs.outbox-poll-interval:500}")
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void publishPending() {
         for (OutboxEvent event : outbox.findTop50ByStatusAndAvailableAtLessThanEqualOrderByIdAsc(
                 OutboxStatus.PENDING, Instant.now())) {

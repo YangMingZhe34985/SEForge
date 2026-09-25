@@ -47,6 +47,7 @@ const editingMember = ref<CourseMember | null>(null)
 const memberForm = reactive({ classId: '' as string, role: 'STUDENT' as 'STUDENT' | 'TA' })
 const resources = ref<CourseResource[]>([])
 const documents = ref<KnowledgeDocument[]>([])
+const documentLoadError = ref('')
 const documentJobs = reactive<Record<string, AsyncJob>>({})
 const chapters = ref<CourseChapter[]>([])
 const knowledgePoints = ref<KnowledgePoint[]>([])
@@ -84,6 +85,7 @@ const pagedMembers = computed(() => {
 
 async function loadDetails(targetCourseId: string | null) {
   const generation = ++detailGeneration
+  documentLoadError.value = ''
   if (!targetCourseId) {
     resources.value = []
     documents.value = []
@@ -102,9 +104,13 @@ async function loadDetails(targetCourseId: string | null) {
   try {
     const [resourceList, documentList, chapterList, pointList, announcementPageResult] = await Promise.all([
       courseApi.resources(targetCourseId),
-      // Knowledge ingestion is a later-phase capability: its outage must not hide
-      // the Phase 1 course resources, chapters, and announcements.
-      courseApi.documents(targetCourseId).catch(() => [] as KnowledgeDocument[]),
+      // Keep course resources available, but never disguise an ingestion outage as an empty library.
+      courseApi.documents(targetCourseId).catch((error: unknown) => {
+        if (componentMounted && generation === detailGeneration) {
+          documentLoadError.value = error instanceof Error ? error.message : '知识文档加载失败，请刷新重试'
+        }
+        return [] as KnowledgeDocument[]
+      }),
       courseApi.chapters(targetCourseId),
       courseApi.knowledgePoints(targetCourseId),
       courseApi.announcements(targetCourseId, 0, announcementPageSize),
@@ -480,10 +486,9 @@ async function withdrawAnnouncement(announcement: CourseAnnouncement) {
 }
 
 async function createClass() {
-  if (!selected.value || (!editingClassId.value && !classForm.code.trim()) || !classForm.name.trim()) return ElMessage.warning('请填写教学班代码和名称')
+  if (!selected.value || !classForm.name.trim()) return ElMessage.warning('请填写教学班名称')
   try {
     const input = {
-      code: classForm.code.trim(),
       name: classForm.name.trim(),
       capacity: classForm.capacity,
       primaryClass: classForm.primaryClass,
@@ -645,7 +650,8 @@ onBeforeUnmount(() => {
           </el-tab-pane>
           <el-tab-pane label="课程资源" name="resources">
             <div class="tab-toolbar"><p>原始课程资料可直接上传和下载，不依赖 AI 摄取。</p><div class="button-row"><el-button @click="loadDetails(selected.id)">刷新</el-button><template v-if="canManageSelected"><label class="upload-button" :class="{ disabled: resourceUploading }"><input type="file" :disabled="resourceUploading" @change="uploadResource(($event.target as HTMLInputElement).files)" />{{ resourceUploading ? '上传中…' : '上传课程资料' }}</label><el-button @click="resourceVisible = true">登记外部对象</el-button><label class="upload-button" :class="{ disabled: documentUploading }"><input type="file" accept=".pdf,.ppt,.pptx,.docx,.md,.txt" :disabled="documentUploading" @change="uploadDocument(($event.target as HTMLInputElement).files)" />{{ documentUploading ? '上传中…' : '上传知识文档' }}</label></template></div></div>
-            <el-table v-if="documents.length" :data="documents" class="document-table">
+            <el-alert v-if="documentLoadError" :title="documentLoadError" type="error" :closable="false" show-icon />
+            <el-table v-else-if="documents.length" :data="documents" class="document-table">
               <el-table-column prop="name" label="知识文档" min-width="200" />
               <el-table-column label="大小" width="100"><template #default="scope">{{ formatBytes(scope.row.sizeBytes) }}</template></el-table-column>
               <el-table-column label="摄取状态" width="130"><template #default="scope"><StatusBadge :status="documentTaskStatus(scope.row)" /></template></el-table-column>
@@ -743,7 +749,7 @@ onBeforeUnmount(() => {
     <el-dialog v-model="chapterVisible" :title="editingChapterId ? '编辑章节' : '添加章节'" width="min(480px, 94vw)"><el-form label-position="top"><el-form-item label="章节名称"><el-input v-model="chapterForm.title" /></el-form-item><el-form-item label="顺序"><el-input-number v-model="chapterForm.sortOrder" :min="1" /></el-form-item><el-form-item label="说明"><el-input v-model="chapterForm.description" type="textarea" /></el-form-item></el-form><template #footer><el-button type="primary" @click="createChapter">保存</el-button></template></el-dialog>
     <el-dialog v-model="pointVisible" :title="editingPointId ? '编辑知识点' : '添加知识点'" width="min(480px, 94vw)"><el-form label-position="top"><el-form-item label="知识点名称"><el-input v-model="pointForm.title" /></el-form-item><el-form-item label="关联章节"><el-select v-model="pointForm.chapterId" clearable><el-option v-for="chapter in chapters" :key="chapter.id" :label="chapter.title" :value="chapter.id" /></el-select></el-form-item><el-form-item label="顺序"><el-input-number v-model="pointForm.sortOrder" :min="1" /></el-form-item><el-form-item label="说明"><el-input v-model="pointForm.description" type="textarea" /></el-form-item></el-form><template #footer><el-button type="primary" @click="createPoint">保存</el-button></template></el-dialog>
     <el-dialog v-model="classVisible" :title="editingClassId ? '修改教学班' : '创建教学班'" width="min(520px, 94vw)">
-      <el-form label-position="top"><div class="form-grid"><el-form-item label="教学班代码"><el-input v-model="classForm.code" :disabled="Boolean(editingClassId)" placeholder="SE-01" /></el-form-item><el-form-item label="教学班名称"><el-input v-model="classForm.name" placeholder="软件工程 1 班" /></el-form-item></div><div class="form-grid"><el-form-item label="容量（可选）"><el-input-number v-model="classForm.capacity" :min="1" :max="10000" controls-position="right" style="width:100%" /></el-form-item><el-form-item label="主教学班"><el-switch v-model="classForm.primaryClass" active-text="是" inactive-text="否" /></el-form-item></div></el-form>
+      <el-form label-position="top"><div class="form-grid"><el-form-item label="教学班代码"><el-input :model-value="editingClassId ? classForm.code : '创建后由系统生成'" disabled /></el-form-item><el-form-item label="教学班名称"><el-input v-model="classForm.name" placeholder="软件工程 1 班" /></el-form-item></div><div class="form-grid"><el-form-item label="容量（可选）"><el-input-number v-model="classForm.capacity" :min="1" :max="10000" controls-position="right" style="width:100%" /></el-form-item><el-form-item label="主教学班"><el-switch v-model="classForm.primaryClass" active-text="是" inactive-text="否" /></el-form-item></div></el-form>
       <template #footer><el-button @click="classVisible = false">取消</el-button><el-button type="primary" @click="createClass">保存</el-button></template>
     </el-dialog>
     <el-dialog v-model="inviteVisible" title="创建课程邀请码" width="min(540px, 94vw)">

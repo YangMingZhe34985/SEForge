@@ -32,6 +32,7 @@ public class IngestionPersistence {
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Ingestion record not found"));
         KnowledgeDocument document = documents.findById(ingestion.getDocumentId())
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Document not found"));
+        requireLive(document.getId());
         ingestion.processing();
         document.beginIngestion();
         return IngestionContext.from(document, ingestion);
@@ -44,6 +45,7 @@ public class IngestionPersistence {
                 .findAllByDocumentIdAndEmbeddingVersionOrderByChunkIndexAsc(documentId, embeddingVersion)
                 .stream().map(KnowledgeChunk::getVectorId).toList();
         chunks.deleteAllByDocumentIdAndEmbeddingVersion(documentId, embeddingVersion);
+        chunks.flush();
         chunks.saveAll(replacements);
         return staleVectorIds;
     }
@@ -71,6 +73,16 @@ public class IngestionPersistence {
     public void cancel(Long asyncJobId, Long documentId) {
         documents.findById(documentId).ifPresent(KnowledgeDocument::ingestionCancelled);
         ingestions.findByAsyncJobId(asyncJobId).ifPresent(IngestionJob::cancelled);
+    }
+
+    @Transactional(readOnly = true)
+    public void requireLive(Long documentId) {
+        KnowledgeDocument document = documents.findById(documentId).orElseThrow(() ->
+                new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Document not found"));
+        if (document.getStatus() == com.ustb.seforge.content.domain.DocumentStatus.DELETED
+                || document.getStatus() == com.ustb.seforge.content.domain.DocumentStatus.DELETING) {
+            throw new com.ustb.seforge.job.service.JobExecutionAbortedException("Document was deleted");
+        }
     }
 
     public record IngestionContext(Long documentId, Long courseId, Long chapterId, String objectKey,

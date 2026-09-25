@@ -31,6 +31,9 @@ import org.springframework.transaction.annotation.Transactional;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
+// Other suites use csrf(), which replaces the cached filter's token repository.
+// Verify the real cookie/header contract against a fresh, unmodified context.
+@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.BEFORE_CLASS)
 class AdminAuditLogIntegrationTest {
     private static final String PASSWORD = "audit-test-password";
 

@@ -16,9 +16,22 @@ Spring Boot API 与异步 worker 共用本模块和容器镜像，通过 Spring 
 - `dev`：本地开发，允许 AI/外部基础设施不可用。
 - `test`：自动化测试，使用测试替身或 Testcontainers，不访问云模型。
 - `prod`：API 的容器配置，Flyway 是唯一 Schema 管理入口。
-- `worker`：与 `prod` 组合为 `prod,worker`，处理持久异步任务。
+- `worker`：容器使用 `prod,worker`；宿主机使用 `dev,worker`，默认启用任务发布/消费并监听 8082。
 
 API 监听 8080，健康检查为 `GET /actuator/health`。容器入口不探测云模型；Provider 未配置时应报告降级状态，而不是阻止核心服务启动。
+
+宿主机先按根目录 README 启动 MySQL/Redis/MinIO/etcd/Milvus，再分别运行 API 和 worker：
+
+```powershell
+.\mvnw.cmd spring-boot:run
+# 在另一个 backend 终端中：
+.\mvnw.cmd spring-boot:run '-Dspring-boot.run.profiles=dev,worker'
+```
+
+两者从 `../.env` 读取同一组 `MYSQL_APP_*`、`REDIS_PASSWORD`、`MINIO_APP_*`。
+默认宿主机端口依次为 MySQL 3307、Redis 6380、MinIO 9000、Milvus 19530；Compose 通过服务名访问内部端口。
+文档/RAG 还需要 `DASHSCOPE_API_KEY` 与向量开关；只启动 API 会让摄取任务等待 worker。
+Code Review 应使用 Compose 的网络隔离 worker，并配置真实 SonarQube 与 Token。
 
 ## 容器运行
 
@@ -39,7 +52,7 @@ docker compose --env-file .env -f backend/docker/docker-compose.yml up -d --buil
 | MySQL | `MYSQL_DATABASE`、`MYSQL_APP_USERNAME`、`MYSQL_APP_PASSWORD`、`MYSQL_ROOT_PASSWORD` |
 | Redis | `REDIS_PASSWORD` |
 | MinIO | `MINIO_ROOT_*`、`MINIO_APP_*` |
-| Milvus | `MILVUS_ENABLED` |
+| Milvus | `SEFORGE_VECTOR_STORE_ENABLED`（优先）、`MILVUS_ENABLED`（兼容）、`MILVUS_HOST_PORT` |
 | AI | `SEFORGE_AI_ENABLED`、`DEEPSEEK_API_KEY`、`DASHSCOPE_API_KEY` |
 | SonarQube 服务 | `SONAR_POSTGRES_*`、`SONAR_HTTP_PORT` |
 | 代码扫描 Worker | `SEFORGE_SONAR_ENABLED`、`SEFORGE_SONAR_SERVER_URL`、`SEFORGE_SONAR_TOKEN`、`SEFORGE_SONAR_SCANNER_EXECUTABLE` |
@@ -86,7 +99,8 @@ ZIP `attachmentObjectKey`，不接受客户端提供的 Sonar findings。异步 
 Compose 的 worker target 基于固定版本的官方 SonarScanner CLI 镜像构建；API target 保持精简。
 应用不会在启动或任务执行时下载 Scanner。`SEFORGE_SONAR_SCANNER_EXECUTABLE` 可覆盖默认
 `sonar-scanner`，Token 仅通过子进程环境和 Bearer API 认证传递，不写入命令行。若启用扫描但
-Scanner 或 Token 不可用，Review 会明确失败为 `SONAR_FAILED`，不会生成假成功报告。
+Scanner 或 Token 不可用，Review 会明确失败；缺失配置分别返回 `SONAR_SCANNER_MISSING`、
+`SONAR_TOKEN_MISSING`，其他扫描失败返回 `SONAR_FAILED`，不会生成假成功报告。
 
 ```text
 SEFORGE_SONAR_ENABLED=true

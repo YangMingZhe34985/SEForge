@@ -24,7 +24,7 @@ public class DocumentReviewJobHandler implements JobHandler {
         try {
             return reviews.execute(job, ReviewType.DOCUMENT);
         } catch (Exception exception) {
-            reviews.markFailed(job.id(), exception);
+            reviews.markFailed(job, exception);
             throw exception;
         }
     }

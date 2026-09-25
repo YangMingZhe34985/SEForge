@@ -2,7 +2,7 @@
 
 ## Phase 6 正式门禁
 
-本轮权威运行器是 `docs/release/verify.mjs`，使用隔离生产 Compose、HTTPS、Secure Cookie、真实 Redis Session / CSRF，依次运行 `configure → build → up → seed → inspect → load → recovery → backup`。只可用于专用 `seforge-p6-verify` / `seforge-p6-restore` 项目；不要在业务环境执行 seed。详见 `docs/phase-6-summary.md` 和 `docs/operations.md`。
+本轮权威运行器是 `docs/release/verify.mjs`，使用隔离生产 Compose、HTTPS、Secure Cookie、真实 Redis Session / CSRF，依次运行 `configure → build → up → seed → inspect → load → recovery → backup`。只可用于专用 `seforge-p6-verify` / `seforge-p6-restore` 项目；不要在业务环境执行 seed。阶段结果见[开发过程记录书 Phase 6](../development-history.md#phase-6-teacher-dashboard-与生产发布)和[运维手册](../operations.md)。
 
 `load` 使用 200 个独立认证会话、50 个传统 API 用户、20 个 POST-SSE 和 5 个真实解析/Embedding/Milvus 摄取任务，并记录 Provider 实测并发。机器可读结果为 `backend/target/phase6-release/mixed-load-results.json`；该目录还含敏感测试凭据和备份，不可整体提交。
 

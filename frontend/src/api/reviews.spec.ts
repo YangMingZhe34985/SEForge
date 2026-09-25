@@ -74,6 +74,18 @@ describe('reviewApi contracts', () => {
     })
   })
 
+  it('keeps authoritative Sonar findings separate from AI explanation and audit metadata', async () => {
+    requestMock.mockResolvedValueOnce({ id: 'r', reviewJobId: '91', summary: 'review', model: 'coder', promptVersion: 'code-review/v2', aiTraceId: '7', generatedAt: '', result: {
+      sonar: { qualityGate: 'ERROR', projectKey: 'project', analysisId: 'analysis' },
+      findings: [{ findingKey: 'finding-1', rule: 'python:S1764', type: 'BUG', severity: 'MAJOR', component: 'bad.py', line: 2, message: 'Identical operands' }],
+      analysis: { explanations: [{ findingKey: 'finding-1', explanation: 'AI explanation', impact: 'impact', remediation: 'fix' }] },
+    } })
+    const report = await reviewApi.report('42', { ...codeJob, subjectName: 'code' } as ReviewJob)
+    expect(report.findings).toEqual([expect.objectContaining({ message: 'Identical operands', explanation: 'AI explanation', rule: 'python:S1764' })])
+    expect(report.sonar?.qualityGate).toBe('ERROR')
+    expect(report.aiTraceId).toBe('7')
+  })
+
   it('delegates type filtering and pagination to the server', async () => {
     requestMock.mockResolvedValueOnce({ items: [codeJob], page: 3, size: 20, total: 81 })
 

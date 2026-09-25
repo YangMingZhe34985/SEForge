@@ -20,12 +20,23 @@ public class ReviewResultValidator {
             throw invalid("Document review is missing required sections");
         }
         Set<String> required = Set.of("completeness", "consistency", "verifiability", "clarity");
+        strings(result.recommendations(), "Document recommendations");
+        if (result.issues() == null) throw invalid("Document issues are required");
+        result.issues().forEach(issue -> {
+            if (issue == null || blank(issue.code()) || blank(issue.category()) || blank(issue.message())
+                    || blank(issue.evidence()) || blank(issue.recommendation())
+                    || !Set.of("INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL").contains(issue.severity() == null ? "" : issue.severity())) {
+                throw invalid("Document issue is incomplete or invalid");
+            }
+        });
         Set<String> actual = new HashSet<>();
         result.dimensions().forEach(dimension -> {
             if (dimension != null && dimension.dimension() != null) {
                 actual.add(dimension.dimension().trim().toLowerCase());
                 bounded(dimension.score(), BigDecimal.ZERO, BigDecimal.valueOf(100),
                         "Document dimension score");
+                strings(dimension.findings(), "Dimension findings");
+                strings(dimension.suggestions(), "Dimension suggestions");
             }
         });
         if (!actual.equals(required) || actual.size() != result.dimensions().size()) {
@@ -36,7 +47,8 @@ public class ReviewResultValidator {
 
     public AssignmentReviewResult assignment(AssignmentReviewResult result,
                                                Map<Long, BigDecimal> rubricMaximums) {
-        if (result == null || blank(result.summary()) || result.rubricItems() == null) {
+        if (result == null || blank(result.summary()) || result.rubricItems() == null
+                || rubricMaximums == null || rubricMaximums.isEmpty()) {
             throw invalid("Assignment review is incomplete");
         }
         Set<Long> seen = new HashSet<>();
@@ -53,6 +65,9 @@ public class ReviewResultValidator {
             if (blank(suggestion.feedback())) {
                 throw invalid("Every rubric suggestion must include feedback");
             }
+            strings(suggestion.evidence(), "Rubric evidence");
+            if (suggestion.evidence().isEmpty()) throw invalid("Every rubric suggestion requires evidence");
+            strings(suggestion.issues(), "Rubric issues");
         });
         if (!seen.equals(rubricMaximums.keySet())) {
             throw invalid("Assignment review must evaluate every rubric item exactly once");
@@ -94,9 +109,14 @@ public class ReviewResultValidator {
     }
 
     private void bounded(BigDecimal value, BigDecimal minimum, BigDecimal maximum, String label) {
-        if (value == null || value.compareTo(minimum) < 0 || value.compareTo(maximum) > 0) {
+        if (value == null || value.stripTrailingZeros().scale() > 2
+                || value.compareTo(minimum) < 0 || value.compareTo(maximum) > 0) {
             throw invalid(label + " is outside its allowed range");
         }
+    }
+
+    private void strings(List<String> values, String label) {
+        if (values == null || values.stream().anyMatch(this::blank)) throw invalid(label + " is missing or invalid");
     }
 
     private boolean blank(String value) {

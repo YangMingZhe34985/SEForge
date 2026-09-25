@@ -1,0 +1,427 @@
+{
+  "course": "software-engineering",
+  "documents": [
+    {
+      "source": "cohesion.pdf",
+      "text": "Cohesion means a module focuses on one closely related set of responsibilities."
+    },
+    {
+      "source": "coupling.ppt",
+      "text": "Coupling measures dependencies between modules; explicit stable interfaces reduce coupling."
+    },
+    {
+      "source": "traceability.pptx",
+      "text": "Traceability links requirements to design elements and verification tests so omissions can be located."
+    },
+    {
+      "source": "verification.docx",
+      "text": "Verification checks whether work products conform to specified requirements."
+    },
+    {
+      "source": "validation.md",
+      "text": "Validation checks whether the delivered product satisfies intended user needs."
+    },
+    {
+      "source": "encapsulation.txt",
+      "text": "Encapsulation hides internal state behind controlled operations and protects invariants."
+    },
+    {
+      "source": "regression.pdf",
+      "text": "Regression testing reruns checks after a change to detect unintended breakage."
+    },
+    {
+      "source": "equivalence.ppt",
+      "text": "Equivalence partitioning groups inputs expected to behave alike and tests representatives."
+    },
+    {
+      "source": "boundary.pptx",
+      "text": "Boundary value testing exercises values at and immediately around input limits."
+    },
+    {
+      "source": "refactoring.docx",
+      "text": "Refactoring improves internal code structure while preserving observable behavior."
+    }
+  ],
+  "questions": [
+    {
+      "id": "software-engineering-1-1",
+      "question": "What does cohesion mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "cohesion.pdf"
+      ]
+    },
+    {
+      "id": "software-engineering-1-2",
+      "question": "Explain the purpose of cohesion using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "cohesion.pdf"
+      ]
+    },
+    {
+      "id": "software-engineering-1-3",
+      "question": "Summarize the documented principle of cohesion.",
+      "answerable": true,
+      "expectedSources": [
+        "cohesion.pdf"
+      ]
+    },
+    {
+      "id": "software-engineering-1-4",
+      "question": "Which property or practice is described under cohesion?",
+      "answerable": true,
+      "expectedSources": [
+        "cohesion.pdf"
+      ]
+    },
+    {
+      "id": "software-engineering-2-1",
+      "question": "What does coupling mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "coupling.ppt"
+      ]
+    },
+    {
+      "id": "software-engineering-2-2",
+      "question": "Explain the purpose of coupling using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "coupling.ppt"
+      ]
+    },
+    {
+      "id": "software-engineering-2-3",
+      "question": "Summarize the documented principle of coupling.",
+      "answerable": true,
+      "expectedSources": [
+        "coupling.ppt"
+      ]
+    },
+    {
+      "id": "software-engineering-2-4",
+      "question": "Which property or practice is described under coupling?",
+      "answerable": true,
+      "expectedSources": [
+        "coupling.ppt"
+      ]
+    },
+    {
+      "id": "software-engineering-3-1",
+      "question": "What does traceability mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "traceability.pptx"
+      ]
+    },
+    {
+      "id": "software-engineering-3-2",
+      "question": "Explain the purpose of traceability using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "traceability.pptx"
+      ]
+    },
+    {
+      "id": "software-engineering-3-3",
+      "question": "Summarize the documented principle of traceability.",
+      "answerable": true,
+      "expectedSources": [
+        "traceability.pptx"
+      ]
+    },
+    {
+      "id": "software-engineering-3-4",
+      "question": "Which property or practice is described under traceability?",
+      "answerable": true,
+      "expectedSources": [
+        "traceability.pptx"
+      ]
+    },
+    {
+      "id": "software-engineering-4-1",
+      "question": "What does verification mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "verification.docx"
+      ]
+    },
+    {
+      "id": "software-engineering-4-2",
+      "question": "Explain the purpose of verification using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "verification.docx"
+      ]
+    },
+    {
+      "id": "software-engineering-4-3",
+      "question": "Summarize the documented principle of verification.",
+      "answerable": true,
+      "expectedSources": [
+        "verification.docx"
+      ]
+    },
+    {
+      "id": "software-engineering-4-4",
+      "question": "Which property or practice is described under verification?",
+      "answerable": true,
+      "expectedSources": [
+        "verification.docx"
+      ]
+    },
+    {
+      "id": "software-engineering-5-1",
+      "question": "What does validation mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "validation.md"
+      ]
+    },
+    {
+      "id": "software-engineering-5-2",
+      "question": "Explain the purpose of validation using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "validation.md"
+      ]
+    },
+    {
+      "id": "software-engineering-5-3",
+      "question": "Summarize the documented principle of validation.",
+      "answerable": true,
+      "expectedSources": [
+        "validation.md"
+      ]
+    },
+    {
+      "id": "software-engineering-5-4",
+      "question": "Which property or practice is described under validation?",
+      "answerable": true,
+      "expectedSources": [
+        "validation.md"
+      ]
+    },
+    {
+      "id": "software-engineering-6-1",
+      "question": "What does encapsulation mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "encapsulation.txt"
+      ]
+    },
+    {
+      "id": "software-engineering-6-2",
+      "question": "Explain the purpose of encapsulation using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "encapsulation.txt"
+      ]
+    },
+    {
+      "id": "software-engineering-6-3",
+      "question": "Summarize the documented principle of encapsulation.",
+      "answerable": true,
+      "expectedSources": [
+        "encapsulation.txt"
+      ]
+    },
+    {
+      "id": "software-engineering-6-4",
+      "question": "Which property or practice is described under encapsulation?",
+      "answerable": true,
+      "expectedSources": [
+        "encapsulation.txt"
+      ]
+    },
+    {
+      "id": "software-engineering-7-1",
+      "question": "What does regression mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "regression.pdf"
+      ]
+    },
+    {
+      "id": "software-engineering-7-2",
+      "question": "Explain the purpose of regression using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "regression.pdf"
+      ]
+    },
+    {
+      "id": "software-engineering-7-3",
+      "question": "Summarize the documented principle of regression.",
+      "answerable": true,
+      "expectedSources": [
+        "regression.pdf"
+      ]
+    },
+    {
+      "id": "software-engineering-7-4",
+      "question": "Which property or practice is described under regression?",
+      "answerable": true,
+      "expectedSources": [
+        "regression.pdf"
+      ]
+    },
+    {
+      "id": "software-engineering-8-1",
+      "question": "What does equivalence mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "equivalence.ppt"
+      ]
+    },
+    {
+      "id": "software-engineering-8-2",
+      "question": "Explain the purpose of equivalence using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "equivalence.ppt"
+      ]
+    },
+    {
+      "id": "software-engineering-8-3",
+      "question": "Summarize the documented principle of equivalence.",
+      "answerable": true,
+      "expectedSources": [
+        "equivalence.ppt"
+      ]
+    },
+    {
+      "id": "software-engineering-8-4",
+      "question": "Which property or practice is described under equivalence?",
+      "answerable": true,
+      "expectedSources": [
+        "equivalence.ppt"
+      ]
+    },
+    {
+      "id": "software-engineering-9-1",
+      "question": "What does boundary mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "boundary.pptx"
+      ]
+    },
+    {
+      "id": "software-engineering-9-2",
+      "question": "Explain the purpose of boundary using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "boundary.pptx"
+      ]
+    },
+    {
+      "id": "software-engineering-9-3",
+      "question": "Summarize the documented principle of boundary.",
+      "answerable": true,
+      "expectedSources": [
+        "boundary.pptx"
+      ]
+    },
+    {
+      "id": "software-engineering-9-4",
+      "question": "Which property or practice is described under boundary?",
+      "answerable": true,
+      "expectedSources": [
+        "boundary.pptx"
+      ]
+    },
+    {
+      "id": "software-engineering-10-1",
+      "question": "What does refactoring mean in this course?",
+      "answerable": true,
+      "expectedSources": [
+        "refactoring.docx"
+      ]
+    },
+    {
+      "id": "software-engineering-10-2",
+      "question": "Explain the purpose of refactoring using the course notes.",
+      "answerable": true,
+      "expectedSources": [
+        "refactoring.docx"
+      ]
+    },
+    {
+      "id": "software-engineering-10-3",
+      "question": "Summarize the documented principle of refactoring.",
+      "answerable": true,
+      "expectedSources": [
+        "refactoring.docx"
+      ]
+    },
+    {
+      "id": "software-engineering-10-4",
+      "question": "Which property or practice is described under refactoring?",
+      "answerable": true,
+      "expectedSources": [
+        "refactoring.docx"
+      ]
+    },
+    {
+      "id": "software-engineering-unsupported-1",
+      "question": "What does this course say about astronomy?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "software-engineering-unsupported-2",
+      "question": "What does this course say about geology?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "software-engineering-unsupported-3",
+      "question": "What does this course say about surgery?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "software-engineering-unsupported-4",
+      "question": "What does this course say about paleontology?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "software-engineering-unsupported-5",
+      "question": "What does this course say about musicology?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "software-engineering-unsupported-6",
+      "question": "What does this course say about botany?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "software-engineering-unsupported-7",
+      "question": "What does this course say about meteorology?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "software-engineering-unsupported-8",
+      "question": "What does this course say about archaeology?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "software-engineering-unsupported-9",
+      "question": "What does this course say about oceanography?",
+      "answerable": false,
+      "expectedSources": []
+    },
+    {
+      "id": "software-engineering-unsupported-10",
+      "question": "What does this course say about pharmacology?",
+      "answerable": false,
+      "expectedSources": []
+    }
+  ]
+}

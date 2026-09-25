@@ -1,5 +1,6 @@
 import axios, { type AxiosRequestConfig } from 'axios'
 import type { ApiEnvelope, CsrfToken } from '@/types/domain'
+import { fieldErrors } from './validation'
 
 export const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '')
 
@@ -41,8 +42,12 @@ function normalizeError(error: unknown): ApiError {
   if (status === 401 && typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('seforge:unauthorized'))
   }
+  const fields = fieldErrors(envelope?.details)
+  const message = Object.keys(fields).length && envelope?.code === 'VALIDATION_FAILED'
+    ? Object.entries(fields).map(([field, text]) => `${field}: ${text}`).join('；')
+    : envelope?.message || (status === 0 ? '无法连接到服务器' : '请求失败')
   return new ApiError(
-    envelope?.message || (status === 0 ? '无法连接到服务器' : '请求失败'),
+    status >= 500 && envelope?.traceId ? `${message}（${envelope.code}，追踪号 ${envelope.traceId}）` : message,
     status,
     String(envelope?.code || 'REQUEST_FAILED'),
     envelope?.traceId,

@@ -24,7 +24,7 @@ public class AssignmentReviewJobHandler implements JobHandler {
         try {
             return reviews.execute(job, ReviewType.ASSIGNMENT);
         } catch (Exception exception) {
-            reviews.markFailed(job.id(), exception);
+            reviews.markFailed(job, exception);
             throw exception;
         }
     }

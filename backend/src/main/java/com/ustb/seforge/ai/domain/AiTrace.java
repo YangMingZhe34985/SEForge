@@ -91,6 +91,7 @@ public class AiTrace extends BaseEntity {
     }
 
     public void succeed(Integer inputTokens, Integer outputTokens, Duration latency) {
+        if (status != AiTraceStatus.STARTED) return;
         status = AiTraceStatus.SUCCEEDED;
         this.inputTokens = inputTokens;
         this.outputTokens = outputTokens;
@@ -103,6 +104,7 @@ public class AiTrace extends BaseEntity {
     }
 
     public void fail(Throwable error, Duration latency) {
+        if (status != AiTraceStatus.STARTED) return;
         status = AiTraceStatus.FAILED;
         latencyMs = latency.toMillis();
         completedAt = Instant.now();

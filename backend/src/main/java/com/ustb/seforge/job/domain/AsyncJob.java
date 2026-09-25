@@ -77,7 +77,8 @@ public class AsyncJob extends BaseEntity {
     }
 
     public void markQueued() {
-        if (!status.isTerminal() && !cancelRequested) {
+        // A duplicate/late outbox delivery must never revoke a running lease.
+        if ((status == JobStatus.PENDING || status == JobStatus.RETRY_WAIT) && !cancelRequested) {
             status = JobStatus.QUEUED;
         }
     }
@@ -90,7 +91,8 @@ public class AsyncJob extends BaseEntity {
         }
         boolean claimable = status == JobStatus.PENDING || status == JobStatus.QUEUED
                 || (status == JobStatus.RETRY_WAIT && !now.isBefore(nextAttemptAt));
-        if (!claimable || (leaseExpiresAt != null && leaseExpiresAt.isAfter(now))) {
+        if (!claimable || (status != JobStatus.PENDING && now.isBefore(nextAttemptAt))
+                || (leaseExpiresAt != null && leaseExpiresAt.isAfter(now))) {
             return false;
         }
         status = JobStatus.RUNNING;

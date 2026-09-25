@@ -5,6 +5,8 @@ import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { adminApi, type AdminUserMembership, type UserImportPreview, type UserImportResult } from '@/api/admin'
 import { courseApi } from '@/api/courses'
+import { ApiError } from '@/api/client'
+import { fieldErrors, USERNAME_RULE, USERNAME_HINT } from '@/api/validation'
 import type { CourseSummary, PlatformRole, Semester, SemesterStatus, User } from '@/types/domain'
 
 const users = ref<User[]>([])
@@ -47,6 +49,11 @@ const form = reactive({
   platformRole: 'USER' as PlatformRole,
 })
 const semesterForm = reactive({ code: '', name: '', startsOn: '', endsOn: '', status: 'PLANNED' as SemesterStatus })
+const userErrors = ref<Record<string, string>>({})
+
+function validateUsername() {
+  userErrors.value.username = USERNAME_RULE.test(form.username) ? '' : USERNAME_HINT
+}
 
 async function load() {
   loading.value = true
@@ -90,6 +97,9 @@ async function loadUsers() {
 }
 
 async function createUser() {
+  userErrors.value = {}
+  validateUsername()
+  if (userErrors.value.username) return
   if (!form.email || !form.username || !form.displayName || form.password.length < 10) return ElMessage.warning('请完整填写账号信息，密码至少 10 位')
   if (form.accountType === 'STUDENT' && !/^[A-Za-z0-9_-]{3,64}$/.test(form.studentNo.trim())) return ElMessage.warning('请输入有效且唯一的学号')
   try {
@@ -107,7 +117,10 @@ async function createUser() {
     createVisible.value = false
     Object.assign(form, { email: '', username: '', studentNo: '', displayName: '', password: '', accountType: 'TEACHER', platformRole: 'USER' })
     ElMessage.success('账号已创建')
-  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '创建失败') }
+  } catch (error) {
+    if (error instanceof ApiError) userErrors.value = fieldErrors(error.details)
+    ElMessage.error(error instanceof Error ? error.message : '创建失败')
+  }
 }
 
 async function previewCsv(files: FileList | null) {
@@ -157,7 +170,7 @@ function downloadImportResult() {
 }
 
 async function createSemester() {
-  if (!semesterForm.code.trim() || !semesterForm.name.trim() || !semesterForm.startsOn || !semesterForm.endsOn) {
+  if (!semesterForm.name.trim() || !semesterForm.startsOn || !semesterForm.endsOn) {
     return ElMessage.warning('请完整填写学期信息')
   }
   if (semesterForm.endsOn <= semesterForm.startsOn) return ElMessage.warning('结束日期必须晚于开始日期')
@@ -165,7 +178,7 @@ async function createSemester() {
     const wasEditing = Boolean(editingSemesterId.value)
     const semester = editingSemesterId.value
       ? await courseApi.updateSemester(editingSemesterId.value, { ...semesterForm })
-      : await courseApi.createSemester({ ...semesterForm })
+      : await courseApi.createSemester({ name: semesterForm.name, startsOn: semesterForm.startsOn, endsOn: semesterForm.endsOn, status: semesterForm.status })
     const index = semesters.value.findIndex((item) => item.id === semester.id)
     if (index >= 0) semesters.value[index] = semester
     else semesters.value.unshift(semester)
@@ -342,10 +355,10 @@ onMounted(load)
     </section>
     </el-tab-pane>
     </el-tabs>
-    <el-dialog v-model="createVisible" title="创建平台账号" width="min(520px,94vw)"><el-form label-position="top"><div class="form-grid"><el-form-item label="姓名"><el-input v-model="form.displayName" /></el-form-item><el-form-item label="账号类型"><el-select v-model="form.accountType"><el-option label="教师" value="TEACHER" /><el-option label="学生" value="STUDENT" /></el-select></el-form-item></div><el-form-item label="平台角色"><el-select v-model="form.platformRole" style="width:100%"><el-option label="普通用户" value="USER" /><el-option label="平台管理员" value="ADMIN" /></el-select></el-form-item><el-form-item label="用户名"><el-input v-model="form.username" /></el-form-item><el-form-item v-if="form.accountType === 'STUDENT'" label="学号"><el-input v-model="form.studentNo" /></el-form-item><el-form-item label="邮箱"><el-input v-model="form.email" /></el-form-item><el-form-item label="初始密码"><el-input v-model="form.password" type="password" show-password /></el-form-item></el-form><template #footer><el-button @click="createVisible=false">取消</el-button><el-button type="primary" @click="createUser">创建</el-button></template></el-dialog>
+    <el-dialog v-model="createVisible" title="创建平台账号" width="min(520px,94vw)"><el-form label-position="top"><div class="form-grid"><el-form-item label="姓名" :error="userErrors.displayName"><el-input v-model="form.displayName" /></el-form-item><el-form-item label="账号类型"><el-select v-model="form.accountType"><el-option label="教师" value="TEACHER" /><el-option label="学生" value="STUDENT" /></el-select></el-form-item></div><el-form-item label="平台角色"><el-select v-model="form.platformRole" style="width:100%"><el-option label="普通用户" value="USER" /><el-option label="平台管理员" value="ADMIN" /></el-select></el-form-item><el-form-item label="用户名" :error="userErrors.username"><el-input v-model="form.username" :placeholder="USERNAME_HINT" @blur="validateUsername" /></el-form-item><el-form-item v-if="form.accountType === 'STUDENT'" label="学号" :error="userErrors.studentNo"><el-input v-model="form.studentNo" /></el-form-item><el-form-item label="邮箱" :error="userErrors.email"><el-input v-model="form.email" /></el-form-item><el-form-item label="初始密码" :error="userErrors.password"><el-input v-model="form.password" type="password" show-password /></el-form-item></el-form><template #footer><el-button @click="createVisible=false">取消</el-button><el-button type="primary" @click="createUser">创建</el-button></template></el-dialog>
     <el-dialog v-model="semesterVisible" :title="editingSemesterId ? '修改学期' : '创建学期'" width="min(540px,94vw)">
       <el-form label-position="top">
-        <div class="form-grid"><el-form-item label="学期代码"><el-input v-model="semesterForm.code" placeholder="2026-FALL" /></el-form-item><el-form-item label="学期名称"><el-input v-model="semesterForm.name" placeholder="2026 秋季学期" /></el-form-item></div>
+        <div class="form-grid"><el-form-item label="学期编号"><el-input :model-value="editingSemesterId ? semesterForm.code : '创建后由系统生成'" disabled /></el-form-item><el-form-item label="学期名称"><el-input v-model="semesterForm.name" placeholder="2026 秋季学期" /></el-form-item></div>
         <div class="form-grid"><el-form-item label="开始日期"><el-date-picker v-model="semesterForm.startsOn" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item><el-form-item label="结束日期"><el-date-picker v-model="semesterForm.endsOn" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></div>
         <el-form-item label="初始状态"><el-select v-model="semesterForm.status" style="width:100%"><el-option label="规划中" value="PLANNED" /><el-option label="进行中" value="ACTIVE" /><el-option label="已结束" value="CLOSED" /></el-select></el-form-item>
       </el-form>

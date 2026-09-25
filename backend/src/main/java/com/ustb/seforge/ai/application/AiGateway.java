@@ -45,6 +45,14 @@ public class AiGateway {
     private final ObjectMapper objectMapper;
     private final AiServiceFactory serviceFactory;
     private final ServiceOutputParser outputParser = new ServiceOutputParser();
+    private final jakarta.validation.ValidatorFactory structuredValidators = jakarta.validation.Validation.buildDefaultValidatorFactory();
+    private final java.util.concurrent.ScheduledExecutorService streamDeadlines =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread thread = new Thread(r, "seforge-stream-deadline"); thread.setDaemon(true); return thread;
+            });
+
+    @jakarta.annotation.PreDestroy
+    public void close() { streamDeadlines.shutdownNow(); structuredValidators.close(); }
 
     public AiGateway(ModelRouter router, AiTraceService traces, ObjectMapper objectMapper,
                      AiServiceFactory serviceFactory) {
@@ -65,6 +73,11 @@ public class AiGateway {
             throw new IllegalArgumentException("At least one authorized tool is required");
         }
         Set<String> required = requiredToolNames == null ? Set.of() : Set.copyOf(requiredToolNames);
+        for (Object tool : authorizedTools) {
+            if (tool instanceof com.ustb.seforge.ai.tool.AuthorizedToolRuntime.Session session) {
+                session.requireScope(request.userId(), request.courseId());
+            }
+        }
         RuntimeException last = null;
         for (AiModelEndpoint endpoint : router.candidates(request.capability())) {
             beginToolAttempt(authorizedTools);
@@ -96,10 +109,47 @@ public class AiGateway {
                 List<AiToolCall> toolCalls = mergeToolCalls(request.toolCalls(), List.of(),
                         recordedSince(recorderOffsets));
                 traces.fail(trace.getId(), exception, Duration.between(startedAt, Instant.now()), toolCalls);
+                if (toolCalls.stream().anyMatch(call -> call.status() == AiToolCall.Status.FAILED
+                        && !"legacy".equals(call.toolVersion()) && !call.retryable())) {
+                    throw new AiUnavailableException("Authorized tool rejected the request", exception);
+                }
                 last = exception;
             }
         }
-        throw new AiUnavailableException(last == null ? "No AI model is configured" : last.getMessage(), last);
+        throw new AiUnavailableException("AI provider unavailable", last);
+    }
+
+    public String embeddingVersion() { return router.embeddingVersion(); }
+
+    public List<dev.langchain4j.data.embedding.Embedding> embed(String version,
+            List<dev.langchain4j.data.segment.TextSegment> segments) {
+        if (segments == null || segments.isEmpty()) throw new IllegalArgumentException("Embedding input required");
+        if (segments.size() > 1000 || segments.stream().anyMatch(s -> s == null || s.text().isBlank())) {
+            throw new IllegalArgumentException("Invalid embedding batch");
+        }
+        AiRequest request = new AiRequest(ModelCapability.EMBEDDING, null, null,
+                "embedding:v1", "", "Embedding batch");
+        RuntimeException last = null;
+        for (var endpoint : router.embeddingCandidates(ModelCapability.EMBEDDING, version)) {
+            Instant started = Instant.now();
+            AiTrace trace = traces.begin(request, endpoint.provider(), endpoint.model());
+            try {
+                var result = endpoint.embeddingModel().embedAll(segments);
+                if (result == null || result.content() == null || result.content().size() != segments.size()
+                        || result.content().stream().anyMatch(e -> e == null || e.dimension() != endpoint.dimensions()
+                        || java.util.stream.IntStream.range(0, e.dimension()).anyMatch(i -> !Float.isFinite(e.vector()[i])))) {
+                    throw new IllegalArgumentException("Invalid embedding response");
+                }
+                var usage = result.tokenUsage();
+                traces.succeed(trace.getId(), usage == null ? null : usage.inputTokenCount(), null,
+                        Duration.between(started, Instant.now()));
+                return List.copyOf(result.content());
+            } catch (RuntimeException failure) {
+                traces.fail(trace.getId(), failure, Duration.between(started, Instant.now()));
+                last = failure;
+            }
+        }
+        throw new AiUnavailableException("Embedding provider unavailable", last);
     }
 
     public AiResponse complete(AiRequest request) {
@@ -118,10 +168,15 @@ public class AiGateway {
                 last = exception;
             }
         }
-        throw new AiUnavailableException(last == null ? "No AI model is configured" : last.getMessage(), last);
+        throw new AiUnavailableException("AI provider unavailable", last);
     }
 
     public <T> T completeJson(AiRequest request, Class<T> responseType) {
+        return completeJson(request, responseType, value -> {});
+    }
+
+    public <T> T completeJson(AiRequest request, Class<T> responseType, Consumer<T> validator) {
+        java.util.Objects.requireNonNull(validator, "validator");
         RuntimeException last = null;
         for (int validationAttempt = 0; validationAttempt < 2; validationAttempt++) {
             AiRequest candidate = validationAttempt == 0 ? request : new AiRequest(
@@ -141,7 +196,22 @@ public class AiGateway {
                     if (result == null || result.content() == null || result.content().json() == null) {
                         throw new IllegalArgumentException("AI returned an empty structured response");
                     }
-                    T parsed = objectMapper.readValue(stripCodeFence(result.content().json()), responseType);
+                    String targetJson = stripCodeFence(result.content().json());
+                    if (!objectMapper.readTree(targetJson).isObject()) {
+                        throw new IllegalArgumentException("Structured output must be a JSON object");
+                    }
+                    T parsed = objectMapper.readerFor(responseType)
+                            .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                            .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
+                            .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_NULL_CREATOR_PROPERTIES)
+                            .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+                            .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                            .readValue(targetJson);
+                    if (parsed == null) throw new IllegalArgumentException("Structured result must not be null");
+                    if (!structuredValidators.getValidator().validate(parsed).isEmpty()) {
+                        throw new IllegalArgumentException("Structured result failed constraint validation");
+                    }
+                    validator.accept(parsed);
                     TokenUsage usage = result.tokenUsage();
                     traces.succeed(trace.getId(), usage == null ? null : usage.inputTokenCount(),
                             usage == null ? null : usage.outputTokenCount(),
@@ -160,20 +230,30 @@ public class AiGateway {
 
     public AiStreamHandle stream(AiRequest request, Consumer<String> onDelta,
                                  Consumer<AiResponse> onComplete, Consumer<Throwable> onError) {
+        return stream(request, onDelta, onComplete, onError, () -> {});
+    }
+
+    public AiStreamHandle stream(AiRequest request, Consumer<String> onDelta,
+                                 Consumer<AiResponse> onComplete, Consumer<Throwable> onError,
+                                 Runnable onCancelled) {
         AtomicBoolean cancelled = new AtomicBoolean(false);
         AiStreamHandle handle = new AiStreamHandle(cancelled, new AtomicReference<>());
-        streamCandidate(request, router.candidates(request.capability()), 0, new AtomicInteger(),
-                new AtomicBoolean(), handle, onDelta, onComplete, onError);
+        List<AiModelEndpoint> attempts = new ArrayList<>();
+        for (var endpoint : router.candidates(request.capability())) {
+            for (int retry = 0; retry <= router.streamingRetries(); retry++) attempts.add(endpoint);
+        }
+        streamCandidate(request, attempts, 0, new AtomicInteger(),
+                new AtomicBoolean(), handle, onDelta, onComplete, onError, onCancelled);
         return handle;
     }
 
     private void streamCandidate(AiRequest request, List<AiModelEndpoint> candidates, int index,
                                  AtomicInteger emittedTokens, AtomicBoolean terminal, AiStreamHandle handle,
                                  Consumer<String> onDelta, Consumer<AiResponse> onComplete,
-                                 Consumer<Throwable> onError) {
+                                 Consumer<Throwable> onError, Runnable onCancelled) {
         if (handle.isCancelled() || terminal.get()) return;
         if (index >= candidates.size()) {
-            if (terminal.compareAndSet(false, true)) {
+            if (handle.finish(AiStreamHandle.TerminalState.ERROR) && terminal.compareAndSet(false, true)) {
                 onError.accept(new AiUnavailableException("All configured AI models failed"));
             }
             return;
@@ -183,59 +263,75 @@ public class AiGateway {
         AiTrace trace = traces.begin(request, endpoint.provider(), endpoint.model());
         AtomicBoolean traceTerminal = new AtomicBoolean();
         AtomicReference<StreamingHandle> providerHandle = new AtomicReference<>();
+        AtomicReference<java.util.concurrent.ScheduledFuture<?>> deadline = new AtomicReference<>();
+        Runnable cancelDeadline = () -> { var task = deadline.get(); if (task != null) task.cancel(false); };
         java.util.function.Predicate<Throwable> failTrace = error -> {
             if (traceTerminal.compareAndSet(false, true)) {
+                cancelDeadline.run();
                 traces.fail(trace.getId(), error, Duration.between(startedAt, Instant.now()));
                 return true;
             }
             return false;
         };
         handle.onCancel(() -> {
+            terminal.set(true);
             failTrace.test(new CancellationException("AI stream cancelled"));
             StreamingHandle current = providerHandle.get();
             if (current != null && !current.isCancelled()) current.cancel();
+            onCancelled.run();
         });
         if (handle.isCancelled()) return;
+        Consumer<Throwable> failAttempt = error -> {
+            synchronized (handle) {
+                Throwable failure = error == null ? new IllegalStateException("AI stream failed") : error;
+                if (!failTrace.test(failure)) return;
+                StreamingHandle current = providerHandle.get();
+                if (current != null && !current.isCancelled()) current.cancel();
+                if (!handle.isCancelled() && emittedTokens.get() == 0 && index + 1 < candidates.size()) {
+                    streamCandidate(request, candidates, index + 1, emittedTokens, terminal, handle,
+                            onDelta, onComplete, onError, onCancelled);
+                } else if (handle.finish(AiStreamHandle.TerminalState.ERROR) && terminal.compareAndSet(false, true)) {
+                    onError.accept(new AiUnavailableException("AI stream failed", failure));
+                }
+            }
+        };
+        Duration timeout = router.timeout();
+        if (timeout == null || timeout.isNegative() || timeout.isZero()) timeout = Duration.ofSeconds(45);
+        deadline.set(streamDeadlines.schedule(() -> failAttempt.accept(new java.util.concurrent.TimeoutException("AI stream timeout")),
+                timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS));
         try {
             TokenStream tokenStream = tokenStream(request, endpoint);
             if (handle.isCancelled()) return;
             tokenStream.onPartialResponseWithContext((partialResponse, context) -> {
+                synchronized (handle) {
                 bindProviderHandle(providerHandle, context, handle);
-                if (!handle.isCancelled() && !terminal.get()
+                if (traceTerminal.get() && context != null && context.streamingHandle() != null
+                        && !context.streamingHandle().isCancelled()) context.streamingHandle().cancel();
+                if (!handle.isCancelled() && !terminal.get() && !traceTerminal.get()
                         && partialResponse.text() != null && !partialResponse.text().isEmpty()) {
                     emittedTokens.incrementAndGet();
                     onDelta.accept(partialResponse.text());
                 }
+                }
             }).onCompleteResponse(response -> {
+                synchronized (handle) {
                 if (handle.isCancelled()) {
                     failTrace.test(new CancellationException("AI stream cancelled"));
                     return;
                 }
-                if (!traceTerminal.compareAndSet(false, true)) return;
                 AiResponse result = response(response, endpoint, trace.getId());
+                if (!traceTerminal.compareAndSet(false, true)
+                        || !handle.finish(AiStreamHandle.TerminalState.DONE)) return;
+                cancelDeadline.run();
                 traces.succeed(trace.getId(), result.inputTokens(), result.outputTokens(),
                         Duration.between(startedAt, Instant.now()));
                 if (terminal.compareAndSet(false, true)) {
                     onComplete.accept(result);
                 }
-            }).onError(error -> {
-                Throwable failure = error == null ? new IllegalStateException("AI stream failed") : error;
-                if (!failTrace.test(failure)) return;
-                if (!handle.isCancelled() && emittedTokens.get() == 0 && index + 1 < candidates.size()) {
-                    streamCandidate(request, candidates, index + 1, emittedTokens, terminal, handle,
-                            onDelta, onComplete, onError);
-                } else if (!handle.isCancelled() && terminal.compareAndSet(false, true)) {
-                    onError.accept(failure);
                 }
-            }).start();
+            }).onError(failAttempt).start();
         } catch (RuntimeException error) {
-            if (!failTrace.test(error)) return;
-            if (!handle.isCancelled() && emittedTokens.get() == 0 && index + 1 < candidates.size()) {
-                streamCandidate(request, candidates, index + 1, emittedTokens, terminal, handle,
-                        onDelta, onComplete, onError);
-            } else if (!handle.isCancelled() && terminal.compareAndSet(false, true)) {
-                onError.accept(error);
-            }
+            failAttempt.accept(error);
         }
     }
 
@@ -350,6 +446,9 @@ public class AiGateway {
     }
 
     private static void requireSuccessfulTools(List<ToolExecution> executions, Set<String> required) {
+        if (executions.stream().anyMatch(ToolExecution::hasFailed)) {
+            throw new IllegalStateException("Authorized tool execution failed");
+        }
         if (required.isEmpty()) return;
         Set<String> succeeded = new HashSet<>();
         executions.stream().filter(execution -> !execution.hasFailed())

@@ -73,6 +73,7 @@ public class CourseService {
     private final CourseResourceRepository resourceRepository;
     private final CourseAccessService accessService;
     private final IdentityService identityService;
+    private final com.ustb.seforge.course.repository.NumberAllocationRepository numbers;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public CourseService(
@@ -85,7 +86,8 @@ public class CourseService {
             KnowledgePointRepository knowledgePointRepository,
             CourseResourceRepository resourceRepository,
             CourseAccessService accessService,
-            IdentityService identityService) {
+            IdentityService identityService,
+            com.ustb.seforge.course.repository.NumberAllocationRepository numbers) {
         this.semesterRepository = semesterRepository;
         this.courseRepository = courseRepository;
         this.classRepository = classRepository;
@@ -96,6 +98,7 @@ public class CourseService {
         this.resourceRepository = resourceRepository;
         this.accessService = accessService;
         this.identityService = identityService;
+        this.numbers = numbers;
     }
 
     @Transactional
@@ -103,15 +106,12 @@ public class CourseService {
         if (!request.endsOn().isAfter(request.startsOn())) {
             throw new AppException(ErrorCode.VALIDATION_FAILED, "Semester end date must be after start date");
         }
-        if (semesterRepository.existsByCodeIgnoreCase(request.code().trim())) {
-            throw new AppException(ErrorCode.CONFLICT, "Semester code already exists");
-        }
         if (request.status() == com.ustb.seforge.course.domain.SemesterStatus.ACTIVE
                 && semesterRepository.existsByStatus(com.ustb.seforge.course.domain.SemesterStatus.ACTIVE)) {
             throw new AppException(ErrorCode.CONFLICT, "Another semester is already current");
         }
         Semester semester = semesterRepository.save(new Semester(
-                request.code().trim().toUpperCase(), request.name().trim(), request.startsOn(), request.endsOn(),
+                nextNumber("SEM", semesterRepository::existsByCodeIgnoreCase), request.name().trim(), request.startsOn(), request.endsOn(),
                 request.status()));
         return semesterView(semester);
     }
@@ -141,10 +141,7 @@ public class CourseService {
             throw new AppException(ErrorCode.ACCESS_DENIED, "Only teacher accounts can create courses");
         }
         Semester semester = requireSemester(request.semesterId());
-        String code = request.code().trim().toUpperCase();
-        if (courseRepository.existsByCodeIgnoreCase(code)) {
-            throw new AppException(ErrorCode.COURSE_CODE_ALREADY_EXISTS, "Course code already exists");
-        }
+        String code = nextNumber("CRS", courseRepository::existsByCodeIgnoreCase);
         Course course = courseRepository.save(new Course(
                 code, request.name().trim(), trimNullable(request.description()), semester.getId(), actorId));
         memberRepository.save(new CourseMember(course.getId(), null, actorId, CourseMemberRole.TEACHER));
@@ -225,10 +222,7 @@ public class CourseService {
     public CourseClassView createClass(Long courseId, Long actorId, CreateCourseClassRequest request) {
         accessService.requireTeacherOrAdmin(courseId, actorId);
         requireCourse(courseId);
-        String code = request.code().trim().toUpperCase();
-        if (classRepository.existsByCourseIdAndCodeIgnoreCase(courseId, code)) {
-            throw new AppException(ErrorCode.CONFLICT, "Class code already exists in this course");
-        }
+        String code = nextNumber("CLS", classRepository::existsByCodeIgnoreCase);
         CourseClass courseClass = classRepository.save(new CourseClass(
                 courseId, code, request.name().trim(), request.capacity(), request.primaryClass()));
         return classView(courseClass);
@@ -560,6 +554,15 @@ public class CourseService {
             if (!inviteRepository.existsByCodeIgnoreCase(code.toString())) return code.toString();
         }
         throw new IllegalStateException("Could not allocate a unique invite code");
+    }
+
+    private String nextNumber(String kind, java.util.function.Predicate<String> exists) {
+        String code;
+        do {
+            Long serial = numbers.saveAndFlush(new com.ustb.seforge.course.domain.NumberAllocation(kind)).getId();
+            code = kind + "-" + String.format(java.util.Locale.ROOT, "%08d", serial);
+        } while (exists.test(code)); // Preserve any pre-existing manually assigned codes.
+        return code;
     }
 
     private void validateObjectKey(Long courseId, String objectKey) {

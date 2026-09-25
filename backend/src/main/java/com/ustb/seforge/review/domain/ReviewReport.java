@@ -15,6 +15,10 @@ import java.time.Instant;
         indexes = @Index(name = "idx_review_report_course", columnList = "course_id,generated_at"),
         uniqueConstraints = @UniqueConstraint(name = "uk_review_report_job", columnNames = "review_job_id"))
 public class ReviewReport extends BaseEntity {
+    @Column(name = "ai_trace_id")
+    private Long aiTraceId;
+    public Long getAiTraceId() { return aiTraceId; }
+    public void linkAiTrace(Long traceId) { this.aiTraceId = traceId; }
     @Column(name = "review_job_id", nullable = false)
     private Long reviewJobId;
 

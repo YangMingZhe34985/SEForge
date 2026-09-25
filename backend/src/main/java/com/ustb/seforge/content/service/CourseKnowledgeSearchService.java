@@ -45,13 +45,13 @@ public class CourseKnowledgeSearchService {
             Long documentId = number(metadata.get("documentId"));
             KnowledgeDocument document = documents.findByIdAndCourseId(documentId, courseId).orElse(null);
             if (document == null || document.getStatus() != DocumentStatus.READY) continue;
-            Long chunkId = chunks.findByVectorIdAndCourseIdAndEmbeddingVersion(
-                    hit.vectorId(), courseId, activeVersion).map(chunk -> chunk.getId()).orElse(null);
-            if (chunkId == null) continue;
-            evidence.add(new KnowledgeEvidence(hit.vectorId(), chunkId, documentId, number(metadata.get("chapterId")),
-                    String.valueOf(metadata.getOrDefault("source", document.getOriginalName())),
-                    integer(metadata.get("page")), String.valueOf(metadata.getOrDefault("section", "")),
-                    hit.text(), hit.score()));
+            var chunk = chunks.findByVectorIdAndCourseIdAndEmbeddingVersion(
+                    hit.vectorId(), courseId, activeVersion).orElse(null);
+            if (chunk == null || !documentId.equals(chunk.getDocumentId())) continue;
+            // Vector metadata narrows the candidate; durable rows are authoritative
+            // for cited text and location (including after reindex publication).
+            evidence.add(new KnowledgeEvidence(hit.vectorId(), chunk.getId(), documentId, chunk.getChapterId(),
+                    chunk.getSource(), chunk.getPage(), chunk.getSection(), chunk.getContent(), hit.score()));
         }
         return evidence;
     }

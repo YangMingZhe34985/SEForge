@@ -1,0 +1,361 @@
+{
+  "date": "2026-09-25",
+  "mode": "Real local MySQL/Redis/MinIO/Milvus and DashScope; no AI Stub",
+  "baseCommit": "34a403c",
+  "courseId": 5,
+  "checks": [
+    {
+      "check": "ingestion",
+      "document": {
+        "id": "3",
+        "courseId": "5",
+        "name": "audit-knowledge.pdf",
+        "mediaType": "application/pdf",
+        "sizeBytes": 716,
+        "checksum": "fdb4817449856d5f56fb63342f865665961f2b287f7532a7bf937337d0df40a3",
+        "status": "READY",
+        "parserVersion": "seforge-parser-v1",
+        "embeddingVersion": "text-embedding-v2",
+        "chunkingVersion": "recursive-token-700-100-v1",
+        "ingestedAt": "2026-09-25T12:44:56.914046Z",
+        "createdAt": "2026-09-25T12:44:55.923122Z",
+        "job": {
+          "id": "5",
+          "type": "INGEST_DOCUMENT",
+          "status": "COMPLETED",
+          "courseId": "5",
+          "attempts": 1,
+          "maxAttempts": 3,
+          "cancelRequested": false,
+          "result": "{\"chunks\": 1, \"documentId\": \"3\", \"embeddingVersion\": \"text-embedding-v2\"}",
+          "createdAt": "2026-09-25T12:44:55.957640Z",
+          "updatedAt": "2026-09-25T12:44:56.919207Z"
+        }
+      }
+    },
+    {
+      "check": "courseQA",
+      "events": [
+        "citation",
+        "message.delta",
+        "message.delta",
+        "message.delta",
+        "message.delta",
+        "message.delta",
+        "message.delta",
+        "message.delta",
+        "message.delta",
+        "message.delta",
+        "message.delta",
+        "message.delta",
+        "message.delta",
+        "done"
+      ],
+      "bytes": 3779
+    },
+    {
+      "check": "documentReview",
+      "review": {
+        "id": "3",
+        "courseId": "5",
+        "documentId": "3",
+        "asyncJobId": "6",
+        "type": "DOCUMENT",
+        "status": "COMPLETED",
+        "createdAt": "2026-09-25T12:45:01.547887Z",
+        "updatedAt": "2026-09-25T12:45:36.617268Z"
+      }
+    },
+    {
+      "check": "tutor",
+      "tutorAllowed": true,
+      "tutorLength": 1741,
+      "tutorCitationCount": 1
+    },
+    {
+      "check": "assignmentReview",
+      "review": {
+        "id": "4",
+        "courseId": "5",
+        "assignmentId": "2",
+        "submissionId": "2",
+        "asyncJobId": "7",
+        "type": "ASSIGNMENT",
+        "status": "COMPLETED",
+        "createdAt": "2026-09-25T12:45:57.979290Z",
+        "updatedAt": "2026-09-25T12:46:26.625316Z"
+      }
+    },
+    {
+      "check": "codeReview",
+      "review": {
+        "id": "5",
+        "courseId": "5",
+        "assignmentId": "2",
+        "submissionId": "2",
+        "asyncJobId": "8",
+        "type": "CODE",
+        "status": "FAILED",
+        "errorCode": "REVIEW_FAILED",
+        "errorMessage": "Static analysis failed; check the scanner service and retry",
+        "createdAt": "2026-09-25T12:46:27.249983Z",
+        "updatedAt": "2026-09-25T12:46:34.878471Z"
+      }
+    }
+  ],
+  "httpSamples": [
+    {
+      "path": "/admin/users",
+      "method": "POST",
+      "status": 201,
+      "code": "OK",
+      "traceId": "663a087e-8146-43f0-8e2c-26642222f51f"
+    },
+    {
+      "path": "/admin/semesters",
+      "method": "POST",
+      "status": 201,
+      "code": "OK",
+      "traceId": "395338d6-70f2-4473-a862-75b03d24ec73"
+    },
+    {
+      "path": "/courses",
+      "method": "POST",
+      "status": 201,
+      "code": "OK",
+      "traceId": "684b1d16-d8d4-4f4b-8456-0979f55c4923"
+    },
+    {
+      "path": "/courses/5/knowledge/documents",
+      "method": "GET",
+      "status": 200,
+      "code": "OK",
+      "traceId": "21c85ed7-8664-4861-b94f-010958c2bf1b"
+    },
+    {
+      "path": "/courses/5/resources/upload",
+      "method": "POST",
+      "status": 201,
+      "code": "OK",
+      "traceId": "e16af12d-6da6-408f-89f6-c834d65cf3b5"
+    },
+    {
+      "path": "/courses/5/resources/4/download",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/courses/5/knowledge/documents",
+      "method": "POST",
+      "status": 200,
+      "code": "OK",
+      "traceId": "c79d524b-5579-44fb-bdea-3a6f2478dc6b"
+    },
+    {
+      "path": "/courses/5/conversations",
+      "method": "POST",
+      "status": 200,
+      "code": "OK",
+      "traceId": "3fd42a64-40c2-4cb7-b9d2-5f283a4b3156"
+    },
+    {
+      "path": "/courses/5/conversations/6/messages",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "path": "/courses/5/reviews/documents",
+      "method": "POST",
+      "status": 200,
+      "code": "OK",
+      "traceId": "2cf4d7c1-bd6e-4652-a848-a26ca4cc3e42"
+    },
+    {
+      "path": "/courses/5/reviews/3",
+      "method": "GET",
+      "status": 200,
+      "code": "OK",
+      "traceId": "4097e6dd-2304-4cfe-ae12-42a735c29d51"
+    },
+    {
+      "path": "/courses/5/reviews/3/report",
+      "method": "GET",
+      "status": 200,
+      "code": "OK",
+      "traceId": "334cc1fd-fe2d-4ba3-95cb-eaecf1cbe0dc"
+    },
+    {
+      "path": "/courses/5/invites",
+      "method": "POST",
+      "status": 201,
+      "code": "OK",
+      "traceId": "892272c4-a9a3-49f2-acce-ed6de1df0359"
+    },
+    {
+      "path": "/courses/join",
+      "method": "POST",
+      "status": 200,
+      "code": "OK",
+      "traceId": "b31e2214-8204-47eb-96e0-57f3db131ea0"
+    },
+    {
+      "path": "/courses/5/assignments",
+      "method": "POST",
+      "status": 201,
+      "code": "OK",
+      "traceId": "f0d9bdf0-f9d0-432a-b937-65f01508f564"
+    },
+    {
+      "path": "/assignments/2/questions",
+      "method": "POST",
+      "status": 201,
+      "code": "OK",
+      "traceId": "b1df7efc-f75b-41f1-90f8-6edcc90a819a"
+    },
+    {
+      "path": "/assignments/2/rubric",
+      "method": "PUT",
+      "status": 200,
+      "code": "OK",
+      "traceId": "3e3223e7-689a-44e0-8e4b-f359400851e9"
+    },
+    {
+      "path": "/assignments/2/rubric/items",
+      "method": "POST",
+      "status": 201,
+      "code": "OK",
+      "traceId": "e6272df3-0786-4806-95c2-49776ad0bfed"
+    },
+    {
+      "path": "/assignments/2/transition",
+      "method": "POST",
+      "status": 200,
+      "code": "OK",
+      "traceId": "f69a7673-c76b-4c01-9f63-4f43b6918d29"
+    },
+    {
+      "path": "/assignments/2/tutor",
+      "method": "POST",
+      "status": 200,
+      "code": "OK",
+      "traceId": "a14f5bb4-659f-4df7-82b8-edfd84e3112c"
+    },
+    {
+      "path": "/assignments/2/submissions/attachments",
+      "method": "POST",
+      "status": 200,
+      "code": "OK",
+      "traceId": "d24f63f7-7e0e-47db-9d80-05d11c7f8041"
+    },
+    {
+      "path": "/assignments/2/submissions",
+      "method": "POST",
+      "status": 200,
+      "code": "OK",
+      "traceId": "ff7ed0e5-d9a7-4641-8b16-6ce944139b0f"
+    },
+    {
+      "path": "/courses/5/reviews/assignments",
+      "method": "POST",
+      "status": 200,
+      "code": "OK",
+      "traceId": "4a5ab7e1-07ea-4dc7-88b2-fa47ca51ccfb"
+    },
+    {
+      "path": "/courses/5/reviews/4",
+      "method": "GET",
+      "status": 200,
+      "code": "OK",
+      "traceId": "cc06e7ee-aac4-482a-9275-5dd87f11c4a6"
+    },
+    {
+      "path": "/courses/5/reviews/code",
+      "method": "POST",
+      "status": 200,
+      "code": "OK",
+      "traceId": "584877c5-c27e-4751-b48e-e2968bc4be7e"
+    },
+    {
+      "path": "/courses/5/reviews/5",
+      "method": "GET",
+      "status": 200,
+      "code": "OK",
+      "traceId": "ab26e125-aa69-4a43-a076-9cd385e1855f"
+    }
+  ],
+  "negative": {
+    "courseId": 4,
+    "minio": {
+      "httpStatus": 503,
+      "code": "STORAGE_UNAVAILABLE",
+      "reason": "CONNECTION_OR_SERVICE",
+      "traceId": "e41122cf-e273-4cb8-8de5-5b48d8590609"
+    },
+    "milvus": {
+      "events": [
+        "error"
+      ],
+      "code": "VECTOR_STORE_UNAVAILABLE",
+      "assistantMessagesPersisted": 0
+    },
+    "knowledgeListStatus": 200
+  },
+  "traces": [
+    {
+      "id": 13,
+      "courseId": 5,
+      "provider": "dashscope",
+      "model": "qwen3.8-flash",
+      "promptVersion": "course-qa:v2",
+      "status": "SUCCEEDED",
+      "inputTokens": 239,
+      "outputTokens": 108,
+      "latencyMs": 1981
+    },
+    {
+      "id": 14,
+      "courseId": 5,
+      "provider": "dashscope",
+      "model": "qwen3.8-flash",
+      "promptVersion": "document-review:v1",
+      "status": "SUCCEEDED",
+      "inputTokens": 267,
+      "outputTokens": 2390,
+      "latencyMs": 34400
+    },
+    {
+      "id": 15,
+      "courseId": 5,
+      "provider": "dashscope",
+      "model": "qwen3.8-flash",
+      "promptVersion": "tutor:v1",
+      "status": "SUCCEEDED",
+      "inputTokens": 1683,
+      "outputTokens": 766,
+      "latencyMs": 16380,
+      "successfulTools": [
+        "get_assignment_question",
+        "get_current_submission",
+        "get_knowledge_point",
+        "search_course_knowledge"
+      ]
+    },
+    {
+      "id": 17,
+      "courseId": 5,
+      "provider": "dashscope",
+      "model": "qwen3.8-flash",
+      "promptVersion": "assignment-review:v1",
+      "status": "SUCCEEDED",
+      "inputTokens": 337,
+      "outputTokens": 1874,
+      "latencyMs": 28186
+    }
+  ],
+  "boundaries": [
+    "Code Review FAILED after 3 attempts: Sonar token absent and service not running; captured before diagnostic code improvement",
+    "DeepSeek not configured, not tested",
+    "Synthetic one-document smoke test is not semantic-quality evaluation",
+    "Original knowledge-list 500 not reproduced"
+  ]
+}

@@ -53,6 +53,7 @@ class KnowledgeDocumentServiceTest {
     private AsyncJobService jobs;
     private AuditService audit;
     private KnowledgeDocumentService service;
+    private SEForgeProperties properties;
 
     @BeforeEach
     void setUp() {
@@ -67,8 +68,9 @@ class KnowledgeDocumentServiceTest {
         versions = mock(VectorIndexVersionPolicy.class);
         jobs = mock(AsyncJobService.class);
         audit = mock(AuditService.class);
+        properties = new SEForgeProperties();
         service = new KnowledgeDocumentService(documents, courses, chapters, chunks, ingestions, access,
-                storage, vectors, versions, jobs, new SEForgeProperties(), audit);
+                storage, vectors, versions, jobs, properties, audit);
     }
 
     @Test
@@ -119,6 +121,8 @@ class KnowledgeDocumentServiceTest {
 
     @Test
     void recordsSuccessfulCourseResourceUpload() {
+        properties.getStorage().setCourseQuotaBytes(10L);
+        when(documents.sumStoredBytesByCourseId(10L)).thenReturn(5L);
         when(courses.findForUpdate(10L)).thenReturn(Optional.of(
                 new Course("SE101", "Software Engineering", null, 3L, 7L)));
         when(versions.writeVersion()).thenReturn("embedding-v1");
@@ -142,7 +146,23 @@ class KnowledgeDocumentServiceTest {
     }
 
     @Test
+    void rejectsOneByteOverCourseQuotaBeforeObjectOrJobWrite() {
+        properties.getStorage().setCourseQuotaBytes(10L);
+        when(courses.findForUpdate(10L)).thenReturn(Optional.of(
+                new Course("SE101", "Software Engineering", null, 3L, 7L)));
+        when(documents.sumStoredBytesByCourseId(10L)).thenReturn(6L);
+
+        assertThatThrownBy(() -> service.upload(10L, null, 7L, markdown()))
+                .isInstanceOfSatisfying(AppException.class, exception -> {
+                    assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED);
+                    assertThat(exception).hasMessageContaining("quota");
+                });
+        verifyNoInteractions(storage, jobs, ingestions, vectors);
+    }
+
+    @Test
     void recordsSuccessfulCourseResourceDeletion() throws Exception {
+        when(courses.findForUpdate(10L)).thenReturn(Optional.of(new Course("SE101", "Software Engineering", null, 3L, 7L)));
         KnowledgeDocument document = new KnowledgeDocument(10L, null, 7L, "notes.md",
                 "courses/10/knowledge/notes.md", "text/markdown", 5L, "checksum",
                 "parser", "embedding-v1", "chunking");

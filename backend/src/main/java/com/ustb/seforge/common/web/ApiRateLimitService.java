@@ -28,6 +28,7 @@ public class ApiRateLimitService {
 
     private final StringRedisTemplate redis;
     private final ConcurrentHashMap<String, LocalWindow> local = new ConcurrentHashMap<>();
+    private volatile Instant redisRetryAt = Instant.MIN;
 
     public ApiRateLimitService(ObjectProvider<StringRedisTemplate> redisProvider) {
         this.redis = redisProvider.getIfAvailable();
@@ -36,16 +37,26 @@ public class ApiRateLimitService {
     public boolean allow(String subject, String bucket, int maximum, Duration window) {
         if (maximum < 1 || window == null || window.isZero() || window.isNegative()) return false;
         String key = "seforge:api-rate:" + bucket + ":" + hash(subject);
-        if (redis != null) {
+        boolean localAllowed = localAllow(key, maximum, window);
+        if (redis != null && !Instant.now().isBefore(redisRetryAt)) {
             try {
                 Long value = redis.execute(INCREMENT, Collections.singletonList(key),
                         Long.toString(window.toMillis()));
-                return value != null && value <= maximum;
+                return value != null && value <= maximum && localAllowed;
             } catch (DataAccessException exception) {
+                redisRetryAt = Instant.now().plusSeconds(5);
                 log.warn("API rate-limit store unavailable; using process-local protection");
             }
         }
+        return localAllowed;
+    }
+
+    private synchronized boolean localAllow(String key, int maximum, Duration window) {
         Instant now = Instant.now();
+        if (local.size() >= 10_000) {
+            local.entrySet().removeIf(entry -> !entry.getValue().expiresAt().isAfter(now));
+            if (!local.containsKey(key) && local.size() >= 10_000) return false;
+        }
         LocalWindow state = local.compute(key, (ignored, existing) -> {
             if (existing == null || !existing.expiresAt().isAfter(now)) {
                 return new LocalWindow(new AtomicInteger(1), now.plus(window));

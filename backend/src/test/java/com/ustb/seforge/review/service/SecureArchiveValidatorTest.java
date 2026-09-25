@@ -148,4 +148,25 @@ class SecureArchiveValidatorTest {
         }
         return output.toByteArray();
     }
+
+    @Test void rejectsDisguisedNestedArchiveAndOversizedInput() throws Exception {
+        byte[] disguised = zip(Map.of("payload.txt", zip(Map.of("x.txt", new byte[]{1}))));
+        assertThatThrownBy(() -> validator.validate("source.zip", "application/zip", disguised.length,
+                new ByteArrayInputStream(disguised))).isInstanceOf(AppException.class).hasMessageContaining("Nested archive");
+        assertThatThrownBy(() -> validator.validate("source.zip", "application/zip", SecureArchiveValidator.MAX_COMPRESSED_BYTES + 1,
+                new ByteArrayInputStream(new byte[0]))).isInstanceOf(AppException.class).hasMessageContaining("50 MB");
+        assertThatThrownBy(() -> validator.validate("source.txt", "application/zip", 0,
+                new ByteArrayInputStream(new byte[0]))).isInstanceOf(AppException.class).hasMessageContaining("ZIP");
+    }
+
+    @Test void removesWorkspaceAfterRejectedExtraction() throws Exception {
+        Path tmp = Path.of(System.getProperty("java.io.tmpdir"));
+        java.util.Set<Path> before;
+        try (var paths = Files.list(tmp)) { before = paths.filter(p -> p.getFileName().toString().startsWith("seforge-sonar-")).collect(java.util.stream.Collectors.toSet()); }
+        byte[] malicious = zip(Map.of("../escape.txt", new byte[]{1}));
+        assertThatThrownBy(() -> validator.extract("source.zip", "application/zip", malicious.length, new ByteArrayInputStream(malicious))).isInstanceOf(AppException.class);
+        try (var paths = Files.list(tmp)) {
+            assertThat(paths.filter(p -> p.getFileName().toString().startsWith("seforge-sonar-")).collect(java.util.stream.Collectors.toSet())).isEqualTo(before);
+        }
+    }
 }

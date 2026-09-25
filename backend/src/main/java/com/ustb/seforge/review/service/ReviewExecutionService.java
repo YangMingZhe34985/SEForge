@@ -172,8 +172,16 @@ public class ReviewExecutionService {
     public void markFailed(Long asyncJobId, Throwable failure) {
         reviewJobs.findByAsyncJobId(asyncJobId)
                 .ifPresent(review -> review.fail(
-                        failure instanceof SonarGatewayException ? "SONAR_FAILED" : "REVIEW_FAILED",
+                        failure instanceof SonarGatewayException sonarFailure ? sonarFailure.diagnosticCode() : "REVIEW_FAILED",
                         failure));
+    }
+
+    public void markFailed(JobSnapshot execution, Throwable failure) {
+        try {
+            asyncJobs.runIfActive(execution.id(), execution.workerId(), () -> markFailed(execution.id(), failure));
+        } catch (JobExecutionAbortedException expired) {
+            // A cancelled or superseded worker must not overwrite the current Review state.
+        }
     }
 
     private PreparedReview prepareDocument(ReviewJob review) throws IOException {
@@ -191,7 +199,7 @@ public class ReviewExecutionService {
                         + "\n\n<document>\n" + limit(material.text(), MAX_DOCUMENT_CHARS)
                         + "\n</document>"));
         DocumentReviewResult result = validator.document(parse(response.text(), DocumentReviewResult.class));
-        return new PreparedReview(result.summary(), result, response.model(), template.identifier(), null);
+        return new PreparedReview(result.summary(), result, response.model(), template.identifier(), null, response.traceId());
     }
 
     private PreparedReview prepareAssignment(ReviewJob review) {
@@ -238,7 +246,7 @@ public class ReviewExecutionService {
                 result.rubricItems().stream().map(item -> new AiRubricSuggestion(
                         item.rubricItemId(), item.suggestedScore(), item.feedback(),
                         item.evidence(), item.issues())).toList());
-        return new PreparedReview(result.summary(), result, response.model(), template.identifier(), gradeWork);
+        return new PreparedReview(result.summary(), result, response.model(), template.identifier(), gradeWork, response.traceId());
     }
 
     private PreparedReview prepareCode(ReviewJob review) throws IOException {
@@ -270,6 +278,7 @@ public class ReviewExecutionService {
         CodeReviewResult result;
         String model;
         String promptVersion;
+        Long traceId = null;
         if (scan.findings().isEmpty()) {
             result = validator.code(new CodeReviewResult(
                     "SonarQube analysis completed with no open findings", List.of()),
@@ -293,6 +302,7 @@ public class ReviewExecutionService {
                     List.of(sonarCall)));
             result = validator.code(parse(response.text(), CodeReviewResult.class), scan.findings());
             model = response.model();
+            traceId = response.traceId();
             promptVersion = template.identifier();
         }
         ObjectNode combined = objectMapper.createObjectNode();
@@ -307,7 +317,7 @@ public class ReviewExecutionService {
         combined.set("sonar", sonarResult);
         combined.set("findings", objectMapper.valueToTree(scan.findings()));
         combined.set("analysis", objectMapper.valueToTree(result));
-        return new PreparedReview(result.summary(), combined, model, promptVersion, null);
+        return new PreparedReview(result.summary(), combined, model, promptVersion, null, traceId);
     }
 
     private String sonarProjectKey(ReviewJob review) {
@@ -353,10 +363,11 @@ public class ReviewExecutionService {
         GradeWork grade = prepared.grade();
         if (grade != null) {
             gradeSuggestions.applySuggestion(grade.submissionId(), grade.courseId(), grade.studentId(),
-                    grade.total(), grade.model(), grade.promptVersion(), grade.itemSuggestions());
+                    grade.total(), grade.model(), grade.promptVersion(), grade.itemSuggestions()).linkAiTrace(prepared.traceId());
         }
         ReviewReport report = reports.save(new ReviewReport(review.getId(), review.getCourseId(),
                 prepared.summary(), json(prepared.structured()), prepared.model(), prepared.promptVersion()));
+        report.linkAiTrace(prepared.traceId());
         review.complete();
         return jobResult(review, report);
     }
@@ -390,7 +401,13 @@ public class ReviewExecutionService {
 
     private <T> T parse(String value, Class<T> type) {
         try {
-            return objectMapper.readValue(stripFence(value), type);
+            return objectMapper.readerFor(type)
+                    .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
+                    .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_NULL_CREATOR_PROPERTIES)
+                    .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .with(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+                    .readValue(stripFence(value));
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("AI returned invalid structured review output", exception);
         }
@@ -429,7 +446,8 @@ public class ReviewExecutionService {
             Object structured,
             String model,
             String promptVersion,
-            GradeWork grade) {
+            GradeWork grade,
+            Long traceId) {
     }
 
     private record GradeWork(

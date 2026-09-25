@@ -30,6 +30,13 @@ public class ConversationController {
         this.streams = streams;
     }
 
+    @org.springframework.web.bind.annotation.ExceptionHandler(
+            org.springframework.web.context.request.async.AsyncRequestNotUsableException.class)
+    public void disconnectedClient() {
+        // The stream callback already cancels the provider. The socket is unusable:
+        // do not ask the global JSON error handler to write a second response.
+    }
+
     @PostMapping
     public ApiEnvelope<ConversationView> create(@PathVariable Long courseId,
                                                 @Valid @RequestBody CreateConversationRequest request,
@@ -61,6 +68,7 @@ public class ConversationController {
     public SseEmitter ask(@PathVariable Long courseId, @PathVariable Long conversationId,
                           @Valid @RequestBody AskQuestionRequest request,
                           @AuthenticationPrincipal UserPrincipal principal) {
+        conversations.require(courseId, conversationId, principal.userId());
         return streams.open(courseId, conversationId, principal.userId(), request);
     }
 

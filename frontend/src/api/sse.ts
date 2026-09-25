@@ -41,7 +41,7 @@ function parseEventBlock(block: string): RawSseEvent | null {
   let id: string | undefined
   const data: string[] = []
 
-  for (const line of block.split('\n')) {
+  for (const line of block.split(/\r?\n/)) {
     if (!line || line.startsWith(':')) continue
     const separator = line.indexOf(':')
     const field = separator < 0 ? line : line.slice(0, separator)
@@ -62,20 +62,21 @@ export async function* parseSseStream(stream: ReadableStream<Uint8Array>): Async
   try {
     while (true) {
       const { done, value } = await reader.read()
-      buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, '\n')
-      let boundary = buffer.indexOf('\n\n')
-      while (boundary >= 0) {
-        const block = buffer.slice(0, boundary)
-        buffer = buffer.slice(boundary + 2)
+      buffer += decoder.decode(value, { stream: !done })
+      let boundary = /\r?\n\r?\n/.exec(buffer)
+      while (boundary) {
+        const block = buffer.slice(0, boundary.index)
+        buffer = buffer.slice(boundary.index + boundary[0].length)
         const event = parseEventBlock(block)
         if (event) yield event
-        boundary = buffer.indexOf('\n\n')
+        boundary = /\r?\n\r?\n/.exec(buffer)
       }
       if (done) break
     }
     const finalEvent = parseEventBlock(buffer)
     if (finalEvent) yield finalEvent
   } finally {
+    await reader.cancel().catch(() => undefined)
     reader.releaseLock()
   }
 }
@@ -141,7 +142,10 @@ export async function streamJsonSse(
     if (terminalSeen) continue
     const event = typedEvent(raw)
     options.onEvent(event)
-    if (event.type === 'done' || event.type === 'error') terminalSeen = true
+    if (event.type === 'done' || event.type === 'error') {
+      terminalSeen = true
+      break
+    }
   }
 
   if (!terminalSeen && !options.signal?.aborted) {

@@ -124,6 +124,7 @@ public class SecureArchiveValidator {
                     throw invalid("Archive contains duplicate paths");
                 }
                 if (entry.isDirectory()) {
+                    if (zip.read() != -1) throw invalid("Archive directory entries must not contain data");
                     if (extractionRoot != null) Files.createDirectories(target);
                     continue;
                 }
@@ -136,6 +137,7 @@ public class SecureArchiveValidator {
                     if (parent != null) Files.createDirectories(parent);
                 }
                 long entryBytes = 0;
+                ByteArrayOutputStreamPrefix prefix = new ByteArrayOutputStreamPrefix();
                 OutputStream output = extractionRoot == null ? OutputStream.nullOutputStream()
                         : newOutput(target);
                 try (output) {
@@ -143,6 +145,8 @@ public class SecureArchiveValidator {
                         if (read == 0) continue;
                         entryBytes += read;
                         uncompressed += read;
+                        prefix.add(buffer, read);
+                        if (prefix.isArchive()) throw invalid("Nested archive content is not accepted");
                         if (entryBytes > MAX_ENTRY_BYTES) {
                             throw invalid("An archive entry is too large");
                         }
@@ -206,6 +210,21 @@ public class SecureArchiveValidator {
                 && ((value[2] == 0x03 && value[3] == 0x04)
                 || (value[2] == 0x05 && value[3] == 0x06)
                 || (value[2] == 0x07 && value[3] == 0x08));
+    }
+
+    private static final class ByteArrayOutputStreamPrefix {
+        private final java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        void add(byte[] value, int count) { bytes.write(value, 0, Math.min(count, 512 - bytes.size())); }
+        boolean isArchive() {
+            byte[] p = bytes.toByteArray();
+            return (p.length >= 4 && p[0] == 'P' && p[1] == 'K' && p[2] == 3 && p[3] == 4)
+                    || (p.length >= 2 && (p[0] & 255) == 0x1f && (p[1] & 255) == 0x8b)
+                    || (p.length >= 4 && p[0] == 'R' && p[1] == 'a' && p[2] == 'r' && p[3] == '!')
+                    || (p.length >= 6 && p[0] == '7' && p[1] == 'z' && (p[2] & 255) == 0xbc)
+                    || (p.length >= 3 && p[0] == 'B' && p[1] == 'Z' && p[2] == 'h')
+                    || (p.length >= 6 && (p[0] & 255) == 0xfd && p[1] == '7' && p[2] == 'z' && p[3] == 'X' && p[4] == 'Z')
+                    || (p.length >= 262 && p[257] == 'u' && p[258] == 's' && p[259] == 't' && p[260] == 'a' && p[261] == 'r');
+        }
     }
 
     private String extension(String name) {

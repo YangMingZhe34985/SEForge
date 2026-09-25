@@ -49,7 +49,7 @@ public class GradeSuggestionService {
     public Grade applySuggestion(Long submissionId, Long courseId, Long studentId, BigDecimal total,
                                  String model, String promptVersion,
                                  List<AiRubricSuggestion> itemSuggestions) {
-        Submission submission = submissions.findById(submissionId)
+        Submission submission = submissions.findForGrading(submissionId)
                 .orElseThrow(() -> notFound("Submission not found"));
         if (!submission.getCourseId().equals(courseId) || !submission.getUserId().equals(studentId)) {
             throw notFound("Submission not found");
@@ -57,10 +57,10 @@ public class GradeSuggestionService {
         if (submission.getStatus() == SubmissionStatus.DRAFT) {
             throw new AppException(ErrorCode.CONFLICT, "Draft submissions cannot be graded");
         }
-        if (total == null || total.signum() < 0) {
+        if (total == null || total.signum() < 0 || total.stripTrailingZeros().scale() > 2) {
             throw new AppException(ErrorCode.VALIDATION_FAILED, "Suggested score must be non-negative");
         }
-        Grade grade = grades.findBySubmissionId(submissionId)
+        Grade grade = grades.findForUpdate(submissionId)
                 .orElseGet(() -> new Grade(submissionId, courseId, studentId));
         if (grade.getStatus() == GradeStatus.CONFIRMED) {
             throw new AppException(ErrorCode.CONFLICT, "A confirmed grade cannot be replaced by AI");
@@ -69,6 +69,9 @@ public class GradeSuggestionService {
         grades.save(grade);
 
         var rubric = rubrics.findByAssignmentId(submission.getAssignmentId()).orElse(null);
+        if (rubric == null || itemSuggestions == null || itemSuggestions.isEmpty()) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, "A complete rubric suggestion is required");
+        }
         if (rubric != null && total.compareTo(rubric.getTotalScore()) > 0) {
             throw new AppException(ErrorCode.VALIDATION_FAILED, "Suggested score exceeds rubric total");
         }
@@ -77,13 +80,13 @@ public class GradeSuggestionService {
         BigDecimal itemTotal = BigDecimal.ZERO;
         Set<Long> seen = new HashSet<>();
         for (AiRubricSuggestion item : itemSuggestions == null ? List.<AiRubricSuggestion>of() : itemSuggestions) {
-            if (item.rubricItemId() == null || !seen.add(item.rubricItemId())) {
+            if (item == null || item.rubricItemId() == null || !seen.add(item.rubricItemId())) {
                 throw new AppException(ErrorCode.VALIDATION_FAILED, "Rubric suggestions must be unique");
             }
             var rubricItem = rubricId == null ? null
                     : rubricItems.findByIdAndRubricId(item.rubricItemId(), rubricId).orElse(null);
             if (rubricItem == null) throw notFound("Rubric item not found");
-            if (item.suggestedScore() == null || item.suggestedScore().signum() < 0
+            if (item.suggestedScore() == null || item.suggestedScore().signum() < 0 || item.suggestedScore().stripTrailingZeros().scale() > 2
                     || item.suggestedScore().compareTo(rubricItem.getMaxScore()) > 0) {
                 throw new AppException(ErrorCode.VALIDATION_FAILED, "Invalid rubric score suggestion");
             }
@@ -91,7 +94,12 @@ public class GradeSuggestionService {
             feedback.save(Feedback.ai(grade.getId(), item.rubricItemId(), required(item.feedback()),
                     item.suggestedScore(), json(item.evidence()), json(item.issueCodes())));
         }
-        if (itemSuggestions != null && !itemSuggestions.isEmpty() && itemTotal.compareTo(total) != 0) {
+        Set<Long> expected = rubricItems.findAllByRubricIdOrderBySortOrderAscIdAsc(rubricId).stream()
+                .map(value -> value.getId()).collect(java.util.stream.Collectors.toSet());
+        if (!seen.equals(expected)) {
+            throw new AppException(ErrorCode.VALIDATION_FAILED, "Every rubric item must appear exactly once");
+        }
+        if (itemTotal.compareTo(total) != 0) {
             throw new AppException(ErrorCode.VALIDATION_FAILED,
                     "Suggested total must equal the rubric item sum");
         }

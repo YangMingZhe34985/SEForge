@@ -23,6 +23,9 @@ interface ReviewJobResponse {
 }
 
 interface ReviewReportResponse {
+  model?: string
+  promptVersion?: string
+  aiTraceId?: string
   id: string
   reviewJobId: string
   summary: string
@@ -66,6 +69,7 @@ function rubricItems(result: Record<string, unknown>): RubricEvaluation[] {
       title: `Rubric #${String(item.rubricItemId ?? '')}`,
       suggestedScore: Number(item.suggestedScore ?? 0),
       evidence: stringList(item.evidence).join('；'),
+      problems: stringList(item.issues),
       feedback: typeof item.feedback === 'string' ? item.feedback : stringList(item.issues).join('；'),
     }]
   })
@@ -78,6 +82,19 @@ function toReport(value: ReviewReportResponse, type: ReviewType): ReviewReport {
     return stringList((raw as Record<string, unknown>).suggestions)
   })
   const analysis = record(value.result.analysis)
+  const explanations = Array.isArray(analysis.explanations) ? analysis.explanations.map(record) : []
+  const sonar = record(value.result.sonar)
+  const findings = Array.isArray(value.result.findings) ? value.result.findings.map((raw) => {
+    const finding = record(raw)
+    const explanation = explanations.find((item) => item.findingKey === finding.findingKey)
+    return {
+      findingKey: String(finding.findingKey), rule: String(finding.rule), type: String(finding.type),
+      severity: String(finding.severity), component: String(finding.component),
+      line: typeof finding.line === 'number' ? finding.line : undefined, message: String(finding.message),
+      explanation: String(explanation?.explanation || ''), impact: String(explanation?.impact || ''),
+      remediation: String(explanation?.remediation || ''),
+    }
+  }) : []
   const codeSuggestions = Array.isArray(analysis.explanations)
     ? analysis.explanations.flatMap((raw) => {
         const item = record(raw)
@@ -87,6 +104,13 @@ function toReport(value: ReviewReportResponse, type: ReviewType): ReviewReport {
     : []
   return {
     id: value.id,
+    model: value.model, promptVersion: value.promptVersion, aiTraceId: value.aiTraceId,
+    sonar: type === 'CODE' ? { qualityGate: String(sonar.qualityGate || ''), projectKey: String(sonar.projectKey || ''), analysisId: String(sonar.analysisId || '') } : undefined,
+    findings,
+    issues: Array.isArray(value.result.issues) ? value.result.issues.map((raw) => {
+      const issue = record(raw)
+      return { code: String(issue.code), severity: String(issue.severity), message: String(issue.message), evidence: String(issue.evidence), recommendation: String(issue.recommendation) }
+    }) : [],
     jobId: value.reviewJobId,
     type,
     summary: value.summary,
@@ -130,11 +154,11 @@ export const reviewApi = {
       method: 'POST',
       data: { submissionId, idempotencyKey: crypto.randomUUID() },
     }).then(toJob),
-  confirmGrade: (submissionId: string, score: number, feedback: string, reason?: string, rubricItems: GradeRubricConfirmation[] = []) =>
+  confirmGrade: (submissionId: string, score: number, feedback: string, reason?: string, rubricItems: GradeRubricConfirmation[] = [], expectedAiTraceId?: string) =>
     apiRequest<GradeRecord>({
       url: `/submissions/${submissionId}/grade/confirm`,
       method: 'POST',
-      data: { score, feedback, reason, rubricItems },
+      data: { score, feedback, reason, rubricItems, expectedAiTraceId },
     }),
   grades: (courseId?: string) =>
     apiRequest<PageResult<GradeRecord>>({ url: '/grades', params: { courseId, page: 0, size: 100 } }),

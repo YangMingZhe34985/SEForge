@@ -1,6 +1,10 @@
 package com.ustb.seforge.ai.application;
 
-public record AiToolCall(String name, Status status, long latencyMs, String errorCode) {
+public record AiToolCall(String name, Status status, long latencyMs, String errorCode,
+                         String toolVersion, Integer resultCount, boolean retryable) {
+    public AiToolCall(String name, Status status, long latencyMs, String errorCode) {
+        this(name, status, latencyMs, errorCode, "legacy", null, false);
+    }
     public AiToolCall {
         if (name == null || name.isBlank()) throw new IllegalArgumentException("tool name is required");
         if (status == null) throw new IllegalArgumentException("tool status is required");

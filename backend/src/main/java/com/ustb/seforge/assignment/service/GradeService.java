@@ -48,12 +48,13 @@ public class GradeService {
     private final RubricItemRepository rubricItems;
     private final UserRepository users;
     private final CourseAccessService courseAccess;
+    private final com.ustb.seforge.common.audit.AuditService audit;
 
     public GradeService(GradeRepository grades, FeedbackRepository feedback,
                         SubmissionRepository submissions, AssignmentRepository assignments,
                         AssignmentQuestionRepository questions, RubricRepository rubrics,
                         RubricItemRepository rubricItems, UserRepository users,
-                        CourseAccessService courseAccess) {
+                        CourseAccessService courseAccess, com.ustb.seforge.common.audit.AuditService audit) {
         this.grades = grades;
         this.feedback = feedback;
         this.submissions = submissions;
@@ -63,6 +64,7 @@ public class GradeService {
         this.rubricItems = rubricItems;
         this.users = users;
         this.courseAccess = courseAccess;
+        this.audit = audit;
     }
 
     @Transactional(readOnly = true)
@@ -89,21 +91,26 @@ public class GradeService {
         return view(grade);
     }
 
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public GradeRecordView confirm(Long submissionId, Long graderId, ConfirmGradeRequest request) {
-        Submission submission = requireSubmission(submissionId);
+        Submission submission = submissions.findForGrading(submissionId)
+                .orElseThrow(() -> notFound("Submission not found"));
         courseAccess.requireTeacherOrAdmin(submission.getCourseId(), graderId);
         if (submission.getStatus() == SubmissionStatus.DRAFT) {
             throw new AppException(ErrorCode.CONFLICT, "Draft submissions cannot be graded");
         }
         BigDecimal maximum = maximumScore(submission.getAssignmentId());
-        if (request.score().compareTo(maximum) > 0) {
+        if (request.score() == null || request.score().signum() < 0 || request.score().stripTrailingZeros().scale() > 2
+                || request.score().compareTo(maximum) > 0) {
             throw new AppException(ErrorCode.VALIDATION_FAILED, "Final score exceeds assignment maximum");
         }
-        Grade grade = grades.findBySubmissionId(submissionId)
+        Grade grade = grades.findForUpdate(submissionId)
                 .orElseGet(() -> grades.save(new Grade(submissionId, submission.getCourseId(), submission.getUserId())));
         if (grade.getStatus() == GradeStatus.CONFIRMED) {
             throw new AppException(ErrorCode.CONFLICT, "Grade is already confirmed");
+        }
+        if (request.expectedAiTraceId() != null && !request.expectedAiTraceId().equals(grade.getAiTraceId())) {
+            throw new AppException(ErrorCode.CONFLICT, "AI suggestion changed; reload the latest review before confirming");
         }
         RubricConfirmationPlan confirmationPlan = validateRubricConfirmations(
                 grade, submission.getAssignmentId(), request.rubricItems(), request.score());
@@ -121,6 +128,8 @@ public class GradeService {
         }
         grade.confirm(graderId, request.score(), request.reason(), Instant.now());
         if (submission.getStatus() == SubmissionStatus.SUBMITTED) submission.markGraded();
+        audit.record(graderId, submission.getCourseId(), "GRADE_CONFIRMED", "GRADE", grade.getId(),
+                com.ustb.seforge.common.audit.AuditService.SUCCEEDED);
         return view(grade);
     }
 
@@ -153,7 +162,7 @@ public class GradeService {
             if (item == null) {
                 throw notFound("Rubric item not found");
             }
-            if (requested.score() == null || requested.score().signum() < 0
+            if (requested.score() == null || requested.score().signum() < 0 || requested.score().stripTrailingZeros().scale() > 2
                     || requested.score().compareTo(item.getMaxScore()) > 0) {
                 throw new AppException(ErrorCode.VALIDATION_FAILED,
                         "Rubric score exceeds item maximum: " + item.getTitle());
@@ -216,7 +225,10 @@ public class GradeService {
                 confirmed ? grade.getFinalScore() : grade.getAiSuggestedScore(), maximumScore(assignment.getId()),
                 confirmed ? "FINAL" : "PENDING_CONFIRMATION", content,
                 confirmed ? grade.getConfirmedAt() : grade.getUpdatedAt(), grade.getAiSuggestedScore(),
-                grade.getModelName(), grade.getPromptVersion(), grade.getOverrideReason());
+                grade.getModelName(), grade.getPromptVersion(), grade.getOverrideReason(), grade.getGraderId(),
+                grade.getAiTraceId(), feedbackRows.stream().map(row -> new GradeRecordView.Item(
+                        row.getRubricItemId(), row.getSource().name(), row.getSuggestedScore(),
+                        row.getFinalScore(), row.getContent(), row.getAuthorId())).toList());
     }
 
     private BigDecimal maximumScore(Long assignmentId) {

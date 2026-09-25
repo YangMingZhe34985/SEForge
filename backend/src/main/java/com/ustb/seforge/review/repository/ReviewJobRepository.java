@@ -8,6 +8,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ReviewJobRepository extends JpaRepository<ReviewJob, Long> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select r from ReviewJob r where r.id = :id and r.courseId = :courseId")
+    Optional<ReviewJob> findForRetry(@org.springframework.data.repository.query.Param("id") Long id,
+                                   @org.springframework.data.repository.query.Param("courseId") Long courseId);
     Optional<ReviewJob> findByIdAndCourseId(Long id, Long courseId);
     Optional<ReviewJob> findByAsyncJobId(Long asyncJobId);
     Page<ReviewJob> findAllByCourseIdOrderByCreatedAtDesc(Long courseId, Pageable pageable);

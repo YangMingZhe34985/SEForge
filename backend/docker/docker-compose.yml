@@ -36,7 +36,7 @@ x-backend-environment: &backend-environment
   SEFORGE_STORAGE_COURSE_QUOTA_BYTES: ${SEFORGE_STORAGE_COURSE_QUOTA_BYTES:-2147483648}
   SEFORGE_STORAGE_ATTACHMENT_USER_QUOTA_BYTES: ${SEFORGE_STORAGE_ATTACHMENT_USER_QUOTA_BYTES:-536870912}
   SEFORGE_STORAGE_ATTACHMENT_COURSE_QUOTA_BYTES: ${SEFORGE_STORAGE_ATTACHMENT_COURSE_QUOTA_BYTES:-2147483648}
-  SEFORGE_VECTOR_STORE_ENABLED: ${MILVUS_ENABLED:-true}
+  SEFORGE_VECTOR_STORE_ENABLED: ${SEFORGE_VECTOR_STORE_ENABLED:-${MILVUS_ENABLED:-true}}
   MILVUS_HOST: milvus
   MILVUS_PORT: "19530"
   MILVUS_COLLECTION_PREFIX: ${MILVUS_COLLECTION_PREFIX:-seforge_chunks}
@@ -287,6 +287,8 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
       - --default-time-zone=+00:00
+      # V8 installs deterministic transactional analytics triggers with the schema migration user.
+      - --log-bin-trust-function-creators=1
     environment:
       TZ: UTC
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
@@ -374,8 +376,11 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
     volumes:
       - minio-data:/data
+    ports:
+      - "127.0.0.1:${MINIO_HOST_PORT:-9000}:9000"
     networks:
       - data
+      - host-access
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
       interval: 15s
@@ -470,6 +475,8 @@ services:
       MINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
     volumes:
       - milvus-data:/var/lib/milvus
+    ports:
+      - "127.0.0.1:${MILVUS_HOST_PORT:-19530}:19530"
     depends_on:
       etcd:
         condition: service_healthy
@@ -477,6 +484,7 @@ services:
         condition: service_healthy
     networks:
       - data
+      - host-access
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:9091/healthz"]
       interval: 15s

@@ -58,4 +58,21 @@ class ReviewResultValidatorTest {
     private DocumentDimension dimension(String name) {
         return new DocumentDimension(name, BigDecimal.valueOf(80), List.of(), List.of());
     }
+
+    @Test void rejectsMissingEvidenceMissingDocumentSectionsAndDuplicateCodeExplanations() {
+        var dimensions = List.of(dimension("completeness"), dimension("consistency"), dimension("verifiability"), dimension("clarity"));
+        assertThatThrownBy(() -> validator.document(new DocumentReviewResult("summary", dimensions, null, List.of()))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> validator.assignment(new AssignmentReviewResult("summary", BigDecimal.ONE,
+                List.of(new RubricSuggestion(1L, BigDecimal.ONE, List.of(), List.of(), "feedback"))), Map.of(1L, BigDecimal.TEN))).isInstanceOf(IllegalArgumentException.class);
+        var finding = new ExternalSonarFinding("key", "rule", "BUG", "MAJOR", "file", 1, "message");
+        var explanation = new CodeIssueExplanation("key", "explain", "impact", "fix");
+        assertThatThrownBy(() -> validator.code(new CodeReviewResult("summary", List.of(explanation, explanation)), List.of(finding))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> validator.code(new CodeReviewResult("summary", List.of()), List.of(finding))).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void rejectsScoresThatWouldChangeWhenPersistedToDecimalTwoColumns() {
+        assertThatThrownBy(() -> validator.assignment(new AssignmentReviewResult("summary", new BigDecimal("1.111"),
+                List.of(new RubricSuggestion(1L, new BigDecimal("1.111"), List.of("evidence"), List.of(), "feedback"))),
+                Map.of(1L, BigDecimal.TEN))).isInstanceOf(IllegalArgumentException.class);
+    }
 }

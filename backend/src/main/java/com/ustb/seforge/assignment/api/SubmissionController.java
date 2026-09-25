@@ -50,9 +50,11 @@ public class SubmissionController {
             @PathVariable Long assignmentId,
             @RequestParam Long questionId,
             @RequestParam MultipartFile file,
+            @RequestParam(required = false) Integer expectedAttempt,
+            @RequestParam(defaultValue = "false") boolean startNextAttempt,
             @AuthenticationPrincipal UserPrincipal principal) {
         return ApiEnvelope.success(attachments.upload(
-                assignmentId, questionId, principal.userId(), file));
+                assignmentId, questionId, principal.userId(), file, expectedAttempt, startNextAttempt));
     }
 
     @PutMapping("/draft")

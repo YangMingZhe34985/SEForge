@@ -118,4 +118,32 @@ class SubmissionServiceTest {
                 .hasMessageContaining("Every assignment question");
         verify(submission, never()).submit(any(Instant.class), anyBoolean());
     }
+
+    @Test
+    void delayedAttachmentRequestCannotOpenAnotherAttemptAfterSubmission() {
+        AssignmentRepository assignments = mock(AssignmentRepository.class);
+        SubmissionRepository submissions = mock(SubmissionRepository.class);
+        AssignmentAuthorizationService authorization = mock(AssignmentAuthorizationService.class);
+        TutorPolicyCodec policies = mock(TutorPolicyCodec.class);
+        ObjectMapper mapper = new ObjectMapper();
+        SubmissionService service = new SubmissionService(assignments, mock(AssignmentQuestionRepository.class),
+                submissions, mock(SubmissionAnswerRepository.class), authorization, policies, mapper,
+                new SubmissionCompletenessValidator(mapper));
+        Assignment assignment = mock(Assignment.class);
+        when(assignment.getId()).thenReturn(1L);
+        when(assignment.getStatus()).thenReturn(AssignmentStatus.PUBLISHED);
+        when(assignment.isAvailableAt(any(Instant.class))).thenReturn(true);
+        when(assignments.findByIdForUpdate(1L)).thenReturn(Optional.of(assignment));
+        when(authorization.requireStudent(assignment, 7L)).thenReturn(mock(CourseMember.class));
+        when(policies.read(null)).thenReturn(TutorPolicy.defaults());
+        Submission submitted = mock(Submission.class);
+        when(submitted.getAttemptNo()).thenReturn(1);
+        when(submitted.getStatus()).thenReturn(SubmissionStatus.SUBMITTED);
+        when(submissions.findFirstByAssignmentIdAndUserIdOrderByAttemptNoDesc(1L, 7L))
+                .thenReturn(Optional.of(submitted));
+
+        assertThatThrownBy(() -> service.requireCurrentDraftForAttachment(1L, 7L, 1, false))
+                .isInstanceOf(AppException.class).hasMessageContaining("start a new attempt");
+        verify(submissions, never()).save(any(Submission.class));
+    }
 }

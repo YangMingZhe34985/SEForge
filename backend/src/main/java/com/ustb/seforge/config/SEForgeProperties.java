@@ -64,8 +64,8 @@ public class SEForgeProperties {
 
     public static class Storage {
         private String endpoint = "http://localhost:9000";
-        private String accessKey = "seforge";
-        private String secretKey = "seforge-local-secret";
+        private String accessKey = "seforge-app";
+        private String secretKey = "";
         private String bucket = "seforge";
         private long courseQuotaBytes = 2L * 1024 * 1024 * 1024;
         private long attachmentUserQuotaBytes = 512L * 1024 * 1024;

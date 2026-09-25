@@ -1,0 +1,53 @@
+{
+  "date": "2026-09-25",
+  "backend": {
+    "command": "mvnw.cmd -Dapi.version=1.44 verify",
+    "result": "PASS",
+    "tests": 206,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "finishedAt": "2026-09-25T21:28:55+08:00",
+    "elapsed": "20:21",
+    "cleanExecuted": false,
+    "processOnlyJavaOption": "-Djdk.net.unixdomain.tmpdir=C:/seforge-uds-unavailable"
+  },
+  "targetedBackend": {
+    "result": "PASS",
+    "tests": 14,
+    "note": "Overlaps full suite; includes last-added GlobalExceptionHandlerTest. Do not add counts."
+  },
+  "frontend": {
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "vitest": {"files": 12, "passed": 45},
+    "build": "PASS",
+    "playwright": {"passed": 19, "skipped": 2, "failed": 0},
+    "skipReason": "Existing Phase 1-E isolated real-browser suites require explicit environment configuration",
+    "warning": "Existing large vendor chunk warning"
+  },
+  "compose": {
+    "baseConfig": "PASS",
+    "productionOverlayConfig": "PASS",
+    "productionInfrastructureHostPorts": [],
+    "fullProductionStackRunThisTurn": false
+  },
+  "isolatedIntegrations": {
+    "phase3RealMysqlMinioMilvusTests": 8,
+    "jobRuntimeRecoveryTests": 4,
+    "phase5ReviewTests": 6,
+    "realSonarScan": "EXECUTION SUCCESS",
+    "scannerInternalNetwork": true,
+    "scannerNetworkCount": 1,
+    "scannerSonarReachable": true,
+    "scannerPublicInternetBlocked": true,
+    "aiProvider": "Controlled test provider, not the real-provider smoke"
+  },
+  "realLocalProviderEvidence": "2026-09-25-local-ai.json",
+  "boundaries": [
+    "Original BUG-3 list 500 not reproduced",
+    "User local Sonar configuration still missing token and running service",
+    "DeepSeek not configured or tested",
+    "Engineering tests are not User Acceptance"
+  ]
+}

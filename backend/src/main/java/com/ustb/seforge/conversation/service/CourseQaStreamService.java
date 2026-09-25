@@ -61,7 +61,7 @@ public class CourseQaStreamService {
             session.error("DUPLICATE_REQUEST", "A stream with this requestId is already active");
             return emitter;
         }
-        emitter.onCompletion(() -> active.remove(key, session));
+        emitter.onCompletion(session::abort);
         emitter.onTimeout(() -> session.cancel("TIMEOUT", "Stream timed out"));
         emitter.onError(ignored -> session.abort());
         executor.execute(() -> run(courseId, conversationId, userId, request, session));
@@ -83,6 +83,7 @@ public class CourseQaStreamService {
     private void run(Long courseId, Long conversationId, Long userId,
                      AskQuestionRequest request, StreamSession session) {
         try {
+            if (session.isTerminal()) return;
             QuestionContext context = conversations.addQuestion(courseId, conversationId, userId,
                     request.requestId(), request.content());
             if (context.titleChanged()) session.event("conversation.title", Map.of(
@@ -90,6 +91,7 @@ public class CourseQaStreamService {
 
             long searchStartedAt = System.nanoTime();
             List<KnowledgeEvidence> evidence = knowledge.search(courseId, request.content(), 5);
+            if (session.isTerminal()) return;
             AiToolCall knowledgeCall = AiToolCall.succeeded("CourseKnowledgeSearchService",
                     Math.max(0, (System.nanoTime() - searchStartedAt) / 1_000_000));
             int ordinal = 1;
@@ -98,13 +100,13 @@ public class CourseQaStreamService {
             }
             if (evidence.isEmpty()) {
                 session.event("message.delta", Map.of("delta", REFUSAL));
-                MessageView saved = conversations.addAssistant(courseId, conversationId, userId,
-                        REFUSAL, null, List.of());
-                session.done(saved);
+                session.persistAndDone(() -> conversations.addAssistant(courseId, conversationId, userId,
+                        REFUSAL, null, List.of()));
                 return;
             }
 
-            PromptTemplate prompt = prompts.load("course-qa", "v1");
+            if (session.isTerminal()) return;
+            PromptTemplate prompt = prompts.load("course-qa", "v2");
             String userPrompt = buildPrompt(request.content(), evidence);
             StringBuilder answer = new StringBuilder();
             AiStreamHandle handle = ai.stream(new AiRequest(ModelCapability.REASONING, userId, courseId,
@@ -123,7 +125,8 @@ public class CourseQaStreamService {
                     error -> session.error("AI_PROVIDER_ERROR", safeMessage(error)));
             session.handle(handle);
         } catch (Throwable error) {
-            session.error("REQUEST_FAILED", safeMessage(error));
+            session.error(error instanceof com.ustb.seforge.common.exception.AppException app
+                    ? app.getErrorCode().name() : "REQUEST_FAILED", safeMessage(error));
         }
     }
 
@@ -131,9 +134,9 @@ public class CourseQaStreamService {
                           AiResponse response, List<KnowledgeEvidence> evidence, StreamSession session) {
         if (session.isTerminal()) return;
         try {
-            MessageView saved = conversations.addAssistant(courseId, conversationId, userId,
-                    answer, response, evidence);
-            session.done(saved);
+            if (answer.isBlank()) throw new IllegalStateException("Empty answer");
+            session.persistAndDone(() -> conversations.addAssistant(courseId, conversationId, userId,
+                    answer, response, evidence));
         } catch (RuntimeException error) {
             session.error("PERSISTENCE_ERROR", "Answer could not be saved");
         }
@@ -153,9 +156,10 @@ public class CourseQaStreamService {
     }
 
     private String safeMessage(Throwable error) {
-        if (error == null || error.getMessage() == null || error.getMessage().isBlank()) return "Request failed";
-        String value = error.getMessage();
-        return value.length() <= 500 ? value : value.substring(0, 500);
+        if (error instanceof com.ustb.seforge.common.exception.AppException app) return app.getMessage();
+        org.slf4j.LoggerFactory.getLogger(CourseQaStreamService.class)
+                .warn("Course QA failed: exception={}", error.getClass().getSimpleName());
+        return "当前请求未能完成，请稍后重试。";
     }
 
     private record SessionKey(Long userId, String requestId) {}
@@ -184,19 +188,24 @@ public class CourseQaStreamService {
         boolean isTerminal() { return terminal.get(); }
 
         void event(String type, Object data) {
+            boolean disconnected = false;
             synchronized (emissionLock) {
                 if (terminal.get()) return;
                 try {
                     send(type, data);
                 } catch (IOException | IllegalStateException exception) {
-                    abortLocked();
+                    terminal.set(true);
+                    disconnected = true;
                 }
             }
+            if (disconnected) cancelProvider();
         }
 
-        void done(MessageView message) {
+        void persistAndDone(java.util.function.Supplier<MessageView> persist) {
             synchronized (emissionLock) {
-                if (!terminal.compareAndSet(false, true)) return;
+                if (terminal.get()) return;
+                MessageView message = persist.get();
+                terminal.set(true);
                 sendTerminalLocked("done", Map.of("message", message));
             }
             emitter.complete();
@@ -213,19 +222,20 @@ public class CourseQaStreamService {
         }
 
         void cancel(String code, String message) {
-            AiStreamHandle current = handle;
-            if (current != null) current.cancel();
             error(code, message);
+            cancelProvider();
         }
 
         void abort() {
             synchronized (emissionLock) {
-                abortLocked();
+                if (!terminal.compareAndSet(false, true)) return;
             }
+            cancelProvider();
         }
 
-        private void abortLocked() {
-            if (!terminal.compareAndSet(false, true)) return;
+        private void cancelProvider() {
+            // Never acquire the gateway handle lock while holding emissionLock:
+            // provider callbacks acquire those locks in the opposite order.
             AiStreamHandle current = handle;
             if (current != null) current.cancel();
             active.remove(key, this);

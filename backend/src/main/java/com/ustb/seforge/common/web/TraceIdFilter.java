@@ -23,11 +23,15 @@ public class TraceIdFilter extends OncePerRequestFilter {
         String requested = request.getHeader(HEADER);
         String traceId = isValid(requested) ? requested : UUID.randomUUID().toString();
         MDC.put(TraceContext.TRACE_ID, traceId);
+        String requestId = UUID.randomUUID().toString();
+        MDC.put("requestId", requestId);
+        response.setHeader("X-Request-Id", requestId);
         response.setHeader(HEADER, traceId);
         try {
             chain.doFilter(request, response);
         } finally {
             MDC.remove(TraceContext.TRACE_ID);
+            MDC.remove("requestId");
         }
     }
 

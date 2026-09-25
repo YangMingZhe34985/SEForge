@@ -1,5 +1,10 @@
 # The worker uses the same image and database but is not exposed by the edge proxy.
 # Redis Streams consumption is activated by the worker profile on RedisJobWorker.
+server:
+  port: ${SERVER_PORT:8082}
+seforge:
+  jobs:
+    enabled: ${SEFORGE_JOBS_ENABLED:true}
 spring:
   session:
     timeout: 30m

@@ -41,6 +41,7 @@ import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -146,11 +147,14 @@ public class AssignmentService {
         Assignment assignment = require(assignmentId);
         courseAccess.requireTeacherOrAdmin(assignment.getCourseId(), userId);
         if (target == AssignmentStatus.PUBLISHED) {
-            if (questions.countByAssignmentId(assignmentId) == 0) {
+            List<AssignmentQuestion> publishableQuestions =
+                    questions.findAllByAssignmentIdOrderBySortOrderAscIdAsc(assignmentId);
+            if (publishableQuestions.isEmpty()) {
                 throw new AppException(ErrorCode.CONFLICT,
                         "An assignment needs at least one question before publishing");
             }
-            requirePublishableRubric(assignmentId);
+            for (AssignmentQuestion question : publishableQuestions) validatePublishableQuestion(question);
+            requirePublishableRubric(assignmentId, publishableQuestions);
         }
         assignment.transitionTo(target, Instant.now());
         return get(assignmentId, userId);
@@ -198,7 +202,11 @@ public class AssignmentService {
     public TutorPolicy updatePolicy(Long assignmentId, Long userId, TutorPolicy policy) {
         Assignment assignment = require(assignmentId);
         courseAccess.requireTeacherOrAdmin(assignment.getCourseId(), userId);
-        String value = policies.write(policy);
+        TutorPolicy current = policies.read(assignment.getTutorPolicyJson());
+        TutorPolicy requested = policy == null ? TutorPolicy.defaults() : policy;
+        String value = policies.write(new TutorPolicy(requested.allowFullSolutionBeforeSubmit(),
+                requested.fullSolutionAfterSubmit(), requested.fullSolutionAfterDue(),
+                requested.allowLateSubmission(), requested.enabledOperations(), current.dueAtOverrides()));
         assignment.updateTutorPolicy(value);
         return policies.read(value);
     }
@@ -266,7 +274,24 @@ public class AssignmentService {
         }
     }
 
-    private void requirePublishableRubric(Long assignmentId) {
+    private void validatePublishableQuestion(AssignmentQuestion question) {
+        if (question.getQuestionType() == null || question.getPrompt() == null
+                || question.getPrompt().isBlank() || question.getMaxScore() == null
+                || question.getMaxScore().signum() <= 0) {
+            throw new AppException(ErrorCode.CONFLICT, "Question is incomplete for publication");
+        }
+        if (question.getQuestionType() == QuestionType.SINGLE_CHOICE
+                || question.getQuestionType() == QuestionType.MULTIPLE_CHOICE) {
+            List<String> options = stringList(question.getOptionsJson());
+            if (options.size() < 2 || options.stream().anyMatch(value -> value == null || value.isBlank())
+                    || new HashSet<>(options).size() != options.size()) {
+                throw new AppException(ErrorCode.CONFLICT,
+                        "Choice questions require at least two distinct non-blank options");
+            }
+        }
+    }
+
+    private void requirePublishableRubric(Long assignmentId, List<AssignmentQuestion> publishableQuestions) {
         Rubric rubric = rubrics.findByAssignmentId(assignmentId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONFLICT,
                         "An assignment needs a rubric before publishing"));
@@ -284,6 +309,12 @@ public class AssignmentService {
         if (itemTotal.compareTo(rubric.getTotalScore()) != 0) {
             throw new AppException(ErrorCode.CONFLICT,
                     "Rubric total score must equal the sum of its item scores");
+        }
+        BigDecimal questionTotal = publishableQuestions.stream().map(AssignmentQuestion::getMaxScore)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (questionTotal.compareTo(rubric.getTotalScore()) != 0) {
+            throw new AppException(ErrorCode.CONFLICT,
+                    "Rubric total score must equal the sum of question scores");
         }
     }
 

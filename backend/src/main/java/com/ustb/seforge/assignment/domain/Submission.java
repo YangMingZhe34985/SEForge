@@ -23,6 +23,8 @@ public class Submission extends BaseEntity {
     private Long userId;
     @Column(name = "attempt_no", nullable = false)
     private int attemptNo;
+    @Column(name = "submission_key", length = 64)
+    private String submissionKey;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 24)
     private SubmissionStatus status = SubmissionStatus.DRAFT;
@@ -49,6 +51,11 @@ public class Submission extends BaseEntity {
         this.late = late;
     }
 
+    public void bindSubmissionKey(String key) {
+        requireDraft();
+        submissionKey = key;
+    }
+
     public void markGraded() {
         if (status != SubmissionStatus.SUBMITTED) {
             throw new AppException(ErrorCode.CONFLICT, "Only submitted work can be graded");
@@ -67,6 +74,7 @@ public class Submission extends BaseEntity {
     public Long getClassId() { return classId; }
     public Long getUserId() { return userId; }
     public int getAttemptNo() { return attemptNo; }
+    public String getSubmissionKey() { return submissionKey; }
     public SubmissionStatus getStatus() { return status; }
     public Instant getSubmittedAt() { return submittedAt; }
     public boolean isLate() { return late; }

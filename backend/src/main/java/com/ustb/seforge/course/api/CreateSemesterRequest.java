@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 
 public record CreateSemesterRequest(
-        @NotBlank @Size(max = 40) String code,
+        @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY) String code,
         @NotBlank @Size(max = 100) String name,
         @NotNull LocalDate startsOn,
         @NotNull LocalDate endsOn,

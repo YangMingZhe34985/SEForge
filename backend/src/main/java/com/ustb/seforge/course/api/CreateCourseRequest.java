@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record CreateCourseRequest(
-        @NotBlank @Pattern(regexp = "^[A-Za-z0-9_.-]{2,64}$") String code,
+        @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY) String code,
         @NotBlank @Size(max = 160) String name,
         @Size(max = 5000) String description,
         @NotNull Long semesterId) {

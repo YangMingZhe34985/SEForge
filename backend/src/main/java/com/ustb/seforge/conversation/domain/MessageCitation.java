@@ -17,7 +17,7 @@ public class MessageCitation extends BaseEntity {
     private Long courseId;
     @Column(name = "document_id", nullable = false)
     private Long documentId;
-    @Column(name = "chunk_id", nullable = false)
+    @Column(name = "chunk_id")
     private Long chunkId;
     @Column(nullable = false)
     private int ordinal;

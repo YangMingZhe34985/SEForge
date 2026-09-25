@@ -19,7 +19,6 @@ import type {
 } from '@/types/domain'
 
 export interface CreateCourseInput {
-  code: string
   name: string
   description?: string
   semesterId: string
@@ -32,7 +31,6 @@ export interface UpdateCourseInput {
 }
 
 export interface CreateSemesterInput {
-  code: string
   name: string
   startsOn: string
   endsOn: string
@@ -40,7 +38,6 @@ export interface CreateSemesterInput {
 }
 
 export interface CreateCourseClassInput {
-  code: string
   name: string
   capacity?: number
   primaryClass: boolean

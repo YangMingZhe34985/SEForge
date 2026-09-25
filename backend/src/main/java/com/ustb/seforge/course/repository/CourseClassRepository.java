@@ -12,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 public interface CourseClassRepository extends JpaRepository<CourseClass, Long> {
     List<CourseClass> findAllByCourseIdOrderByNameAsc(Long courseId);
     boolean existsByCourseIdAndCodeIgnoreCase(Long courseId, String code);
+    boolean existsByCodeIgnoreCase(String code);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from CourseClass c where c.id = :id")

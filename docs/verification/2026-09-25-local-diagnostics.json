@@ -1,0 +1,105 @@
+{
+  "date": "2026-09-25",
+  "profile": "dev,worker",
+  "port": 18082,
+  "checks": [
+    {
+      "check": "healthUp",
+      "passed": true
+    },
+    {
+      "check": "usernameFieldError",
+      "passed": true
+    },
+    {
+      "check": "classNumbers",
+      "passed": true
+    },
+    {
+      "check": "classCodes",
+      "codes": [
+        "CLS-00000011",
+        "CLS-00000012"
+      ]
+    },
+    {
+      "check": "documentsStillReady",
+      "passed": true
+    }
+  ],
+  "http": [
+    {
+      "path": "/admin/users",
+      "method": "POST",
+      "status": 400,
+      "code": "VALIDATION_FAILED",
+      "traceId": "0ed6d81f-1b6d-4308-82b4-3ae707cdeb61",
+      "message": "Request validation failed",
+      "details": {
+        "username": "用户名须为 3–64 位英文字母、数字、下划线、点或短横线"
+      }
+    },
+    {
+      "path": "/courses/5/classes",
+      "method": "POST",
+      "status": 403,
+      "code": "ACCESS_DENIED",
+      "traceId": "a61af5c9-6fe7-4dba-ab6f-1d07ab17c635",
+      "message": "You do not have access to this course"
+    },
+    {
+      "path": "/admin/users",
+      "method": "POST",
+      "status": 201,
+      "code": "OK",
+      "traceId": "803de96c-4325-483c-bfc4-e5a0ae394ea4"
+    },
+    {
+      "path": "/semesters",
+      "method": "GET",
+      "status": 200,
+      "code": "OK",
+      "traceId": "ba72045c-94c9-4f4a-ad84-11da54f3d187"
+    },
+    {
+      "path": "/courses",
+      "method": "POST",
+      "status": 201,
+      "code": "OK",
+      "traceId": "b741ced7-c0de-40f6-bd3b-067a6c750436"
+    },
+    {
+      "path": "/courses/6/classes",
+      "method": "POST",
+      "status": 201,
+      "code": "OK",
+      "traceId": "51985e9c-18f7-47ab-aa56-1d31acb10df9"
+    },
+    {
+      "path": "/courses/6/classes",
+      "method": "POST",
+      "status": 201,
+      "code": "OK",
+      "traceId": "e7b33e3a-69df-429a-a67c-79d43e06d01c"
+    },
+    {
+      "path": "/courses/5/resources",
+      "method": "GET",
+      "status": 200,
+      "code": "OK",
+      "traceId": "54fd218a-0313-4d93-9288-61ded168c9f1"
+    },
+    {
+      "path": "/courses/5/resources/4/download",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/courses/5/knowledge/documents",
+      "method": "GET",
+      "status": 200,
+      "code": "OK",
+      "traceId": "9f0250c9-eeea-44e2-864e-7bc3d0ee17bb"
+    }
+  ]
+}

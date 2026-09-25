@@ -49,6 +49,22 @@ public class GlobalExceptionHandler {
                 .body(ApiError.of(ErrorCode.MALFORMED_REQUEST.name(), "Malformed request body"));
     }
 
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiError> handleUnsupportedMethod(org.springframework.web.HttpRequestMethodNotSupportedException exception) {
+        var response = ResponseEntity.status(org.springframework.http.HttpStatus.METHOD_NOT_ALLOWED);
+        if (exception.getSupportedHttpMethods() != null) {
+            response.allow(exception.getSupportedHttpMethods().toArray(org.springframework.http.HttpMethod[]::new));
+        }
+        return response.body(ApiError.of("METHOD_NOT_ALLOWED", "HTTP method is not supported for this endpoint"));
+    }
+
+    @ExceptionHandler({org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class})
+    public ResponseEntity<ApiError> handleInvalidParameter() {
+        return ResponseEntity.badRequest().body(ApiError.of(ErrorCode.MALFORMED_REQUEST.name(),
+                "A required request parameter is missing or has an invalid format"));
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiError> handleNotFound() {
         return ResponseEntity.status(ErrorCode.RESOURCE_NOT_FOUND.status())
@@ -63,14 +79,17 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiError> handleConflict(DataIntegrityViolationException exception) {
-        log.info("Persistence constraint rejected request: {}", exception.getMostSpecificCause().getMessage());
+        log.info("Persistence constraint rejected request");
         return ResponseEntity.status(ErrorCode.CONFLICT.status())
                 .body(ApiError.of(ErrorCode.CONFLICT.name(), "The requested change conflicts with existing data"));
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleUnexpected(Exception exception) {
-        log.error("Unhandled request failure", exception);
+        Throwable root = exception;
+        while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+        log.error("Unhandled request failure type={} root={} frames={}", exception.getClass().getSimpleName(),
+                root.getClass().getSimpleName(), java.util.Arrays.stream(root.getStackTrace()).limit(6).toList());
         return ResponseEntity.status(ErrorCode.INTERNAL_ERROR.status())
                 .body(ApiError.of(ErrorCode.INTERNAL_ERROR.name(), "An unexpected error occurred"));
     }

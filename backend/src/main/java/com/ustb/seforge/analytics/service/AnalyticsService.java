@@ -26,18 +26,18 @@ public class AnalyticsService {
 
     private final AnalyticsSnapshotRepository snapshots;
     private final DashboardQueryService dashboard;
-    private final AnalyticsSourceCursorService sourceCursors;
+    private final AnalyticsProjectionService projection;
     private final CourseAccessService courseAccess;
     private final AsyncJobService jobs;
     private final ObjectMapper objectMapper;
 
     public AnalyticsService(AnalyticsSnapshotRepository snapshots, DashboardQueryService dashboard,
-                            AnalyticsSourceCursorService sourceCursors,
+                            AnalyticsProjectionService projection,
                             CourseAccessService courseAccess, AsyncJobService jobs,
                             ObjectMapper objectMapper) {
         this.snapshots = snapshots;
         this.dashboard = dashboard;
-        this.sourceCursors = sourceCursors;
+        this.projection = projection;
         this.courseAccess = courseAccess;
         this.jobs = jobs;
         this.objectMapper = objectMapper;
@@ -49,17 +49,19 @@ public class AnalyticsService {
         courseAccess.requireTeachingStaff(courseId, userId);
         dashboard.validateScope(courseId, classId);
         return jobs.submit(JobKind.ANALYTICS_SNAPSHOT, userId, courseId,
-                new SnapshotRequest(classId, Instant.now()), idempotencyKey);
+                new SnapshotRequest(classId, Instant.now()), idempotencyKey == null ? null
+                        : courseId + ":" + classId + ":" + idempotencyKey);
     }
 
     @Transactional
     public String generate(Long courseId, Long classId, Instant requestedAt) {
+        String sourceCursor = projection.refresh(courseId);
+        dashboard.validateScope(courseId, classId);
         AnalyticsSnapshot previous = latest(courseId, classId).orElse(null);
-        String sourceCursor = sourceCursors.current(courseId);
         if (previous != null && sourceCursor.equals(previous.getSourceCursor())) {
             return json(Map.of("snapshotId", previous.getId(), "status", "UNCHANGED"));
         }
-        DashboardView view = dashboard.aggregate(courseId, classId);
+        DashboardView view = projection.view(courseId, classId);
         Instant generatedAt = view.generatedAt();
         Instant periodStart = previous == null ? null : previous.getPeriodEnd();
         AnalyticsSnapshot snapshot = snapshots.save(new AnalyticsSnapshot(courseId, classId,
@@ -90,6 +92,7 @@ public class AnalyticsService {
                                                     int page, int size) {
         courseAccess.requireTeachingStaff(courseId, userId);
         PageRequest pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100));
+        dashboard.validateScope(courseId, classId);
         Page<AnalyticsSnapshot> source = classId == null
                 ? snapshots.findAllByCourseIdAndClassIdIsNullOrderByGeneratedAtDesc(courseId, pageable)
                 : snapshots.findAllByCourseIdAndClassIdOrderByGeneratedAtDesc(courseId, classId, pageable);

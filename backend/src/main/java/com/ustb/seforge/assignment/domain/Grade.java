@@ -35,6 +35,8 @@ public class Grade extends BaseEntity {
     private String modelName;
     @Column(name = "prompt_version", length = 64)
     private String promptVersion;
+    @Column(name = "ai_trace_id")
+    private Long aiTraceId;
 
     protected Grade() {
     }
@@ -46,6 +48,7 @@ public class Grade extends BaseEntity {
     }
 
     public void applyAiSuggestion(BigDecimal score, String model, String promptVersion) {
+        if (status == GradeStatus.CONFIRMED) throw new IllegalStateException("AI cannot replace a confirmed grade");
         aiSuggestedScore = score;
         modelName = model;
         this.promptVersion = promptVersion;
@@ -71,4 +74,6 @@ public class Grade extends BaseEntity {
     public String getOverrideReason() { return overrideReason; }
     public String getModelName() { return modelName; }
     public String getPromptVersion() { return promptVersion; }
+    public Long getAiTraceId() { return aiTraceId; }
+    public void linkAiTrace(Long traceId) { this.aiTraceId = traceId; }
 }

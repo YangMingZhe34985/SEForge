@@ -50,6 +50,7 @@ class CourseServiceTest {
     @Mock CourseResourceRepository resourceRepository;
     @Mock CourseAccessService accessService;
     @Mock IdentityService identityService;
+    @Mock com.ustb.seforge.course.repository.NumberAllocationRepository numbers;
 
     private CourseService service;
 
@@ -57,7 +58,7 @@ class CourseServiceTest {
     void setUp() {
         service = new CourseService(
                 semesterRepository, courseRepository, classRepository, memberRepository, inviteRepository,
-                chapterRepository, knowledgePointRepository, resourceRepository, accessService, identityService);
+                chapterRepository, knowledgePointRepository, resourceRepository, accessService, identityService, numbers);
     }
 
     @Test
@@ -107,6 +108,23 @@ class CourseServiceTest {
         capacityCheck.verify(memberRepository).countByCourseIdAndClassIdAndStatus(
                 2L, 5L, CourseMemberStatus.ACTIVE);
         verify(memberRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void generatedClassNumberSkipsHistoricalCodesAcrossCourses() {
+        when(courseRepository.findById(22L))
+                .thenReturn(Optional.of(new Course("SE101", "Course", null, 1L, 2L)));
+        var first = new com.ustb.seforge.course.domain.NumberAllocation("CLS");
+        var second = new com.ustb.seforge.course.domain.NumberAllocation("CLS");
+        ReflectionTestUtils.setField(first, "id", 1L);
+        ReflectionTestUtils.setField(second, "id", 2L);
+        when(numbers.saveAndFlush(org.mockito.ArgumentMatchers.any())).thenReturn(first, second);
+        when(classRepository.existsByCodeIgnoreCase("CLS-00000001")).thenReturn(true);
+        when(classRepository.save(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> invocation.getArgument(0));
+        var view = service.createClass(22L, 2L, new com.ustb.seforge.course.api.CreateCourseClassRequest(
+                "CLIENT-CODE", "Class", 30, true));
+        assertThat(view.code()).isEqualTo("CLS-00000002");
+        verify(classRepository).existsByCodeIgnoreCase("CLS-00000002");
     }
 
     @Test
