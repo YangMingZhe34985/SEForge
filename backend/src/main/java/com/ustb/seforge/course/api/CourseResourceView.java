@@ -14,5 +14,5 @@ public record CourseResourceView(
         String objectKey,
         String contentType,
         Long sizeBytes,
-        Instant createdAt) {
+        Instant createdAt, String externalUrl) {
 }

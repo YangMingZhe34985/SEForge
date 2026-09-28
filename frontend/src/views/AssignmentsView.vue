@@ -3,6 +3,14 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
+import SafeMarkdown from '@/components/SafeMarkdown.vue'
+import TypedQuestionFields, { type QuestionDraft } from '@/components/TypedQuestionFields.vue'
+import AssignmentMediaList from '@/components/AssignmentMediaList.vue'
+import TeacherReference from '@/components/TeacherReference.vue'
+import QuestionImportEditor from '@/components/QuestionImportEditor.vue'
+import AssignmentRubricEditor from '@/components/AssignmentRubricEditor.vue'
+import { allocation, gradingMode } from '@/components/rubricAllocation'
+import { defaultChoices, choiceText } from '@/components/choiceOptions'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { assignmentApi } from '@/api/assignments'
@@ -11,6 +19,7 @@ import { courseApi } from '@/api/courses'
 import { useCourseStore } from '@/stores/courses'
 import { useAuthStore } from '@/stores/auth'
 import { forgetDraft, forgetSubmissionKey, recoverDraft, rememberDraft, submissionKey } from './assignmentDraftCache'
+import { defaultStudentAnswer as defaultAnswer } from './studentAnswer'
 import type {
   AssignmentDetails,
   AssignmentQuestion,
@@ -52,10 +61,13 @@ const tutorQuestionId = ref('')
 const tutorResult = ref<TutorResponse | null>(null)
 const tutorError = ref('')
 const tutorLoading = ref(false)
+const tutorTrace = ref('')
+let tutorCallVersion = 0
+let tutorAttempt: { input: string; key: string } | null = null
 const submitting = ref(false)
 const createVisible = ref(false)
 const questionVisible = ref(false)
-const rubricItemVisible = ref(false)
+const importVisible = ref(false)
 const editingQuestionId = ref<string | null>(null)
 const rubric = ref<AssignmentRubric | null>(null)
 const teacherSubmissions = ref<TeacherSubmission[]>([])
@@ -65,7 +77,7 @@ const createForm = reactive({ title: '', description: '', classId: '', available
 const editForm = reactive({ title: '', description: '', availableAt: '', dueAt: '', maxAttempts: 1 })
 const extensionVisible = ref(false)
 const extensionForm = reactive({ studentId: '', studentName: '', dueAt: '' })
-const questionForm = reactive({
+const questionForm = reactive<QuestionDraft>({
   type: 'SHORT_ANSWER' as AssignmentQuestion['type'],
   prompt: '',
   optionsText: '',
@@ -73,9 +85,8 @@ const questionForm = reactive({
   points: 10,
   orderIndex: 0,
   knowledgePointId: '',
+  config: { schemaVersion: 1, assetIds: [], answerSpec: { assetIds: [] } },
 })
-const rubricForm = reactive({ title: '课程作业评分量表', totalScore: 100, status: 'DRAFT' as AssignmentRubric['status'] })
-const rubricItemForm = reactive({ questionId: '', title: '', description: '', maxScore: 10, orderIndex: 0 })
 const policyForm = reactive<TutorPolicyConfig>({
   allowFullSolutionBeforeSubmit: false,
   fullSolutionAfterSubmit: true,
@@ -94,6 +105,31 @@ let savePromise: Promise<boolean> | null = null
 
 const canTeachCourse = computed(() => ['TEACHER', 'TA'].includes(courseStore.selectedCourse?.role || ''))
 const canPublish = computed(() => courseStore.selectedCourse?.role === 'TEACHER')
+const rubricReady = computed(() => {
+  const questions = detail.value?.questions || []
+  if (questions.some(q => { const state = allocation(q, rubric.value?.items || []); return state.over || state.incomplete })) return false
+  return !questions.some(q => gradingMode(q) === 'AI_ASSISTED') || rubric.value?.status === 'PUBLISHED'
+})
+const rubricReadinessMessage = computed(() => {
+  const questions = detail.value?.questions || []
+  if (!questions.length) return '请先添加至少一道题目，再发布作业。'
+  const incomplete = questions.find(q => {
+    const state = allocation(q, rubric.value?.items || [])
+    return state.over || state.incomplete
+  })
+  if (incomplete) {
+    const state = allocation(incomplete, rubric.value?.items || [])
+    return state.over
+      ? `第 ${questions.indexOf(incomplete) + 1} 题 Rubric 分值超过题目分值，请调整后再发布。`
+      : `第 ${questions.indexOf(incomplete) + 1} 题已分配 ${state.assigned} / ${incomplete.points} 分；请补齐 AI 评分准则。`
+  }
+  if (questions.some(q => gradingMode(q) === 'AI_ASSISTED') && rubric.value?.status !== 'PUBLISHED') {
+    return rubric.value
+      ? 'AI 评分准则仍为草稿。请先在教师配置中点击“保存并发布评分规则”；发布时系统会按分项合计更新 Rubric 总分。'
+      : '简答题使用 AI 辅助评分，必须先创建并发布完整 Rubric。'
+  }
+  return ''
+})
 const canEdit = computed(() => {
   if (canTeachCourse.value || detail.value?.status !== 'PUBLISHED') return false
   if (detail.value.availableAt && now.value < Date.parse(detail.value.availableAt)) return false
@@ -116,12 +152,6 @@ const isDraft = computed(() => detail.value?.status === 'DRAFT')
 
 function toAnswerList(): SubmissionAnswerInput[] {
   return Object.entries(answers).map(([questionId, answer]) => ({ questionId, answer }))
-}
-
-function defaultAnswer(question: AssignmentQuestion): AnswerValue {
-  if (question.type === 'MULTIPLE_CHOICE') return []
-  if (question.type === 'TRUE_FALSE') return false
-  return ''
 }
 
 async function loadList() {
@@ -279,11 +309,6 @@ async function loadTeacherData(
   knowledgePoints.value = points
   teacherSubmissions.value = submissions
   rubric.value = loadedRubric
-  if (loadedRubric) Object.assign(rubricForm, {
-    title: loadedRubric.title,
-    totalScore: loadedRubric.totalScore,
-    status: loadedRubric.status,
-  })
 }
 
 function className(classId?: string): string {
@@ -364,28 +389,37 @@ function openQuestion(question?: AssignmentQuestion) {
     type: question?.type || 'SHORT_ANSWER',
     prompt: question?.prompt || '',
     optionsText: question?.options?.join('\n') || '',
-    referenceAnswer: '',
+    referenceAnswer: question?.referenceAnswer || '',
     points: question?.points || 10,
     orderIndex: question?.orderIndex ?? detail.value?.questions.length ?? 0,
     knowledgePointId: question?.knowledgePointId || '',
+    config: JSON.parse(JSON.stringify(question?.config || { schemaVersion: 1, assetIds: [], answerSpec: { assetIds: [] } })),
   })
+  questionForm.config.schemaVersion = 1
+  questionForm.config.answerSpec ||= { assetIds: [] }
+  questionForm.config.knowledgePointIds ||= question?.knowledgePointId ? [question.knowledgePointId] : []
+  if (['SINGLE_CHOICE','MULTIPLE_CHOICE'].includes(questionForm.type) && !questionForm.config.choices) {
+    questionForm.config.choices = question?.options?.length
+      ? question.options.map(value => ({ id: value, label: value })) : defaultChoices()
+  }
   questionVisible.value = true
 }
 
 async function saveQuestion() {
-  if (!selectedId.value || !detail.value || !questionForm.prompt.trim()) return
+  if (!selectedId.value || !detail.value) return
+  if (!questionForm.prompt.trim() && !questionForm.config.assetIds?.length) return ElMessage.warning('请填写题干或上传题目图片/附件')
   const assignmentId = selectedId.value
   const requestVersion = assignmentGeneration
   const choice = ['SINGLE_CHOICE', 'MULTIPLE_CHOICE'].includes(questionForm.type)
   const input: AssignmentQuestionInput = {
     type: questionForm.type,
     prompt: questionForm.prompt.trim(),
-    options: choice ? questionForm.optionsText.split('\n').map((item) => item.trim()).filter(Boolean) : undefined,
+    options: choice ? questionForm.config.choices?.map(item => item.id) : undefined,
     referenceAnswer: questionForm.referenceAnswer || undefined,
     points: questionForm.points,
     orderIndex: questionForm.orderIndex,
-    knowledgePointId: questionForm.knowledgePointId || undefined,
-    config: {},
+    knowledgePointId: questionForm.config.knowledgePointIds?.[0] || undefined,
+    config: { ...questionForm.config },
   }
   try {
     const saved = editingQuestionId.value
@@ -424,46 +458,6 @@ async function saveTutorPolicy() {
     Object.assign(policyForm, policy)
     ElMessage.success('Tutor 策略已保存')
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '策略保存失败') }
-}
-
-async function saveRubric() {
-  if (!selectedId.value || !rubricForm.title.trim()) return
-  const assignmentId = selectedId.value
-  const requestVersion = assignmentGeneration
-  try {
-    const saved = await assignmentApi.saveRubric(assignmentId, { ...rubricForm })
-    if (requestVersion !== assignmentGeneration || selectedId.value !== assignmentId) return
-    rubric.value = saved
-    ElMessage.success('Rubric 已保存')
-  } catch (error) { ElMessage.error(error instanceof Error ? error.message : 'Rubric 保存失败') }
-}
-
-async function addRubricItem() {
-  if (!selectedId.value || !rubricItemForm.title.trim()) return
-  const assignmentId = selectedId.value
-  const requestVersion = assignmentGeneration
-  try {
-    const item = await assignmentApi.addRubricItem(assignmentId, {
-      ...rubricItemForm,
-      questionId: rubricItemForm.questionId || undefined,
-      criteria: {},
-    })
-    if (requestVersion !== assignmentGeneration || selectedId.value !== assignmentId) return
-    if (rubric.value) rubric.value.items.push(item)
-    rubricItemVisible.value = false
-    Object.assign(rubricItemForm, { questionId: '', title: '', description: '', maxScore: 10, orderIndex: rubric.value?.items.length || 0 })
-  } catch (error) { ElMessage.error(error instanceof Error ? error.message : 'Rubric 分项保存失败') }
-}
-
-async function deleteRubricItem(itemId: string) {
-  if (!selectedId.value || !rubric.value) return
-  const assignmentId = selectedId.value
-  const requestVersion = assignmentGeneration
-  try {
-    await assignmentApi.deleteRubricItem(assignmentId, itemId)
-    if (requestVersion !== assignmentGeneration || selectedId.value !== assignmentId || !rubric.value) return
-    rubric.value.items = rubric.value.items.filter((item) => item.id !== itemId)
-  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '删除失败') }
 }
 
 function updateAnswer(questionId: string, value: AnswerValue) {
@@ -523,6 +517,7 @@ async function flushDraft(): Promise<boolean> {
 }
 
 async function submit() {
+  if (uploadingQuestionId.value) { ElMessage.warning('请等待答案附件上传完成后再提交'); return }
   if (!selectedId.value || submitting.value) return
   const assignmentId = selectedId.value
   const requestVersion = assignmentGeneration
@@ -561,10 +556,14 @@ async function uploadAttachment(questionId: string, files: FileList | null) {
   const requestVersion = assignmentGeneration
   uploadingQuestionId.value = questionId
   try {
+    if (!await flushDraft()) return
     const attachment = await assignmentApi.uploadAttachment(assignmentId, questionId, file,
       currentSubmission.value?.attemptNumber || 0,
       currentSubmission.value?.status === 'SUBMITTED' || currentSubmission.value?.status === 'GRADED')
     if (requestVersion === assignmentGeneration && selectedId.value === assignmentId) {
+      const current = await assignmentApi.mySubmission(assignmentId)
+      if (requestVersion !== assignmentGeneration || selectedId.value !== assignmentId) return
+      currentSubmission.value = current
       attachmentNames[questionId] = attachment.fileName
       ElMessage.success('源码附件已安全上传')
     }
@@ -576,20 +575,29 @@ async function uploadAttachment(questionId: string, files: FileList | null) {
 }
 
 async function askTutor() {
-  if (!selectedId.value || !tutorQuestionId.value) return
+  if (!selectedId.value || !tutorQuestionId.value || tutorLoading.value) return
   const assignmentId = selectedId.value
   const questionId = tutorQuestionId.value
   const requestVersion = assignmentGeneration
+  const draft = answers[questionId] ?? ''
+  const input = JSON.stringify([authStore.user?.id, assignmentId, questionId, tutorAction.value, draft])
+  if (!tutorAttempt || tutorAttempt.input !== input) tutorAttempt = { input, key: crypto.randomUUID() }
+  const attempt = tutorAttempt
+  const callVersion = ++tutorCallVersion
+  tutorTrace.value = `POST /api/v1/assignments/${assignmentId}/tutor · traceId: ${attempt.key}`
   tutorLoading.value = true
   tutorResult.value = null
   tutorError.value = ''
   try {
-    const result = await assignmentApi.tutor(assignmentId, questionId, tutorAction.value, answers[questionId] ?? '')
+    const result = await assignmentApi.tutor(assignmentId, questionId, tutorAction.value, draft, attempt.key)
     if (requestVersion === assignmentGeneration && selectedId.value === assignmentId) tutorResult.value = result
   } catch (error) {
     if (requestVersion === assignmentGeneration) tutorError.value = error instanceof Error ? error.message : 'Tutor 暂时不可用'
+    // A lost/timeout response is ambiguous: reuse the key to recover, never re-generate.
+    // Only a known terminal failure allows a new attempt on the next click.
+    if (error instanceof ApiError && ['TUTOR_TIMEOUT', 'TUTOR_TOOL_FAILED', 'TUTOR_PROVIDER_FAILED', 'VECTOR_STORE_UNAVAILABLE', 'ACCESS_DENIED'].includes(error.code)) tutorAttempt = null
   } finally {
-    if (requestVersion === assignmentGeneration) tutorLoading.value = false
+    if (callVersion === tutorCallVersion) tutorLoading.value = false
   }
 }
 
@@ -614,7 +622,34 @@ async function createAssignment() {
 
 function answerText(questionId: string): string {
   const value = answers[questionId]
-  return typeof value === 'string' ? value : ''
+  return typeof value === 'string' ? value : value && typeof value === 'object' && !Array.isArray(value) ? value.text : ''
+}
+
+function answerAssets(questionId: string): string[] {
+  const value = answers[questionId]
+  return value && typeof value === 'object' && !Array.isArray(value) ? value.assetIds : []
+}
+function updateRichText(questionId: string, text: string) {
+  const assets = answerAssets(questionId)
+  const structured = detail.value?.questions.find(q => q.id === questionId)?.config?.schemaVersion === 1
+  updateAnswer(questionId, structured || assets.length ? { text, assetIds: assets } : text)
+}
+async function uploadAnswerMedia(questionId: string, file?: File) {
+  if (!file || !selectedId.value || !canEdit.value) return
+  const id = selectedId.value; const version = assignmentGeneration
+  uploadingQuestionId.value = questionId
+  try {
+    if (!await flushDraft()) return
+    const asset = await assignmentApi.uploadMedia(id, 'ANSWER', file, questionId,
+      currentSubmission.value?.attemptNumber || 0, retrying.value)
+    if (version !== assignmentGeneration) return
+    const current = await assignmentApi.mySubmission(id)
+    if (version !== assignmentGeneration) return
+    currentSubmission.value = current
+    updateAnswer(questionId, { text: answerText(questionId), assetIds: [...answerAssets(questionId), asset.id] })
+    await flushDraft()
+  } catch (e) { ElMessage.error(e instanceof Error ? e.message : '答案附件上传失败') }
+  finally { if (version === assignmentGeneration) uploadingQuestionId.value = '' }
 }
 
 function answerArray(questionId: string): string[] {
@@ -660,9 +695,13 @@ onBeforeUnmount(() => {
 
       <div v-if="detail" class="assignment-detail stack">
         <section class="panel">
-          <div class="panel__header"><div><h2>{{ detail.title }}</h2><div class="meta-row"><StatusBadge :status="detail.status" /><span>{{ detail.questions.length }} 题</span><span v-if="detail.dueAt">截止 {{ new Date(detail.dueAt).toLocaleString() }}</span></div></div><div class="button-row"><el-button v-if="isDraft && canTeachCourse" @click="openQuestion()">添加题目</el-button><el-button v-if="isDraft && canPublish" type="primary" @click="transition('PUBLISHED')">发布作业</el-button><el-button v-if="detail.status === 'PUBLISHED' && canPublish" type="warning" @click="transition('CLOSED')">关闭作业</el-button><el-button v-if="detail.status === 'CLOSED' && canPublish" @click="transition('ARCHIVED')">归档</el-button><el-button v-if="canRetry" @click="beginRetry">开始重交</el-button><el-button v-if="canEdit" type="primary" :loading="submitting" @click="submit">{{ retrying ? '提交新尝试' : '提交作业' }}</el-button></div></div>
+          <div class="panel__header"><div><h2>{{ detail.title }}</h2><div class="meta-row"><StatusBadge :status="detail.status" /><span>{{ detail.questions.length }} 题</span><span v-if="detail.dueAt">截止 {{ new Date(detail.dueAt).toLocaleString() }}</span></div></div><div class="button-row"><el-button v-if="isDraft && canTeachCourse" @click="openQuestion()">手动添加题目</el-button><el-button v-if="isDraft && canTeachCourse" @click="importVisible = true">智能导入题目</el-button><el-button v-if="isDraft && canPublish" type="primary" :disabled="!rubricReady" @click="transition('PUBLISHED')">发布作业</el-button><el-button v-if="detail.status === 'PUBLISHED' && canPublish" type="warning" @click="transition('CLOSED')">关闭作业</el-button><el-button v-if="detail.status === 'CLOSED' && canPublish" @click="transition('ARCHIVED')">归档</el-button><el-button v-if="canRetry" @click="beginRetry">开始重交</el-button><el-button v-if="canEdit" type="primary" :loading="submitting" @click="submit">{{ retrying ? '提交新尝试' : '提交作业' }}</el-button></div></div>
           <div class="panel__body"><p class="assignment-description">{{ detail.description }}</p><p v-if="canTeachCourse" class="muted">发布范围：{{ className(detail.classId) }}</p><p v-else-if="currentSubmission" class="muted">第 {{ currentSubmission.attemptNumber }} / {{ detail.maxAttempts }} 次 · {{ currentSubmission.status === 'DRAFT' ? '草稿' : '已提交' }}</p><p v-if="!canTeachCourse && !canEdit && detail.status === 'PUBLISHED'" class="muted">{{ detail.dueAt && now > Date.parse(detail.dueAt) && !detail.tutorPolicy?.allowLateSubmission ? '提交期限已过' : '尚未开放或提交次数已用完' }}</p></div>
         </section>
+
+        <el-alert v-if="isDraft && canPublish && !rubricReady" type="warning" :title="rubricReadinessMessage" :closable="false" show-icon>
+          <template #default><a href="#assignment-rubric-editor">前往 AI 评分准则</a><span>。学生要在作业发布后才能查看并提交。</span></template>
+        </el-alert>
 
         <section v-if="canTeachCourse" class="panel teacher-editor">
           <div class="panel__header"><div><h2>教师配置</h2><span class="muted">题目与评分设置仅在草稿阶段可编辑</span></div></div>
@@ -671,7 +710,7 @@ onBeforeUnmount(() => {
 
             <div class="teacher-grid">
               <div class="subpanel"><div class="subpanel__header"><strong>Tutor 策略</strong><el-button v-if="canPublish" link type="primary" @click="saveTutorPolicy">保存策略</el-button></div><el-switch v-model="policyForm.allowFullSolutionBeforeSubmit" :disabled="!canPublish" active-text="提交前允许完整解析" /><el-switch v-model="policyForm.fullSolutionAfterSubmit" :disabled="!canPublish" active-text="提交后开放完整解析" /><el-switch v-model="policyForm.fullSolutionAfterDue" :disabled="!canPublish" active-text="截止后开放完整解析" /><el-switch v-model="policyForm.allowLateSubmission" :disabled="!canPublish" active-text="允许迟交" /><span class="muted">允许的辅导操作</span><el-checkbox-group v-model="policyForm.enabledOperations" :disabled="!canPublish"><el-checkbox label="提示" value="HINT" /><el-checkbox label="解释" value="EXPLAIN" /><el-checkbox label="检查思路" value="CHECK_REASONING" /><el-checkbox label="分析错误" value="ANALYZE_ERROR" /><el-checkbox label="评价草稿" value="EVALUATE_DRAFT" /><el-checkbox label="完整解析" value="FULL_SOLUTION" /></el-checkbox-group></div>
-              <div class="subpanel"><div class="subpanel__header"><strong>Rubric</strong><el-button v-if="isDraft" link type="primary" @click="rubricItemVisible = true" :disabled="!rubric">添加分项</el-button></div><div class="form-grid"><el-input v-model="rubricForm.title" :disabled="!isDraft" placeholder="Rubric 标题" /><el-input-number v-model="rubricForm.totalScore" :min="1" :disabled="!isDraft" /></div><el-select v-model="rubricForm.status" :disabled="!isDraft"><el-option label="草稿" value="DRAFT" /><el-option label="发布" value="PUBLISHED" /><el-option label="归档" value="ARCHIVED" /></el-select><el-button v-if="isDraft" @click="saveRubric">保存 Rubric</el-button><div v-if="rubric?.items.length" class="rubric-editor-list"><article v-for="item in rubric.items" :key="item.id"><span><strong>{{ item.title }}</strong><small>{{ item.maxScore }} 分</small></span><el-button v-if="isDraft" link type="danger" @click="deleteRubricItem(item.id)">删除</el-button></article></div></div>
+              <AssignmentRubricEditor v-if="detail && selectedId" id="assignment-rubric-editor" :key="selectedId" v-model="rubric" :assignment-id="selectedId" :questions="detail.questions" :editable="isDraft" />
             </div>
 
             <div class="subpanel"><div class="subpanel__header"><strong>学生提交</strong><span class="muted">{{ teacherSubmissions.length }} 条</span><el-button v-if="canPublish" link type="primary" @click="openNewExtension">设置学生延期</el-button></div><el-table v-if="teacherSubmissions.length" :data="teacherSubmissions" size="small"><el-table-column prop="studentName" label="学生" /><el-table-column prop="submission.attemptNumber" label="次数" width="80" /><el-table-column prop="submission.status" label="状态" width="120" /><el-table-column label="提交时间" min-width="170"><template #default="scope">{{ scope.row.submission.submittedAt ? new Date(scope.row.submission.submittedAt).toLocaleString() : '—' }}</template></el-table-column><el-table-column label="个别延期" width="110"><template #default="scope"><el-button link type="primary" @click="openExtension(scope.row)">设置</el-button></template></el-table-column></el-table><p v-else class="muted">暂无正式提交。</p></div>
@@ -679,25 +718,37 @@ onBeforeUnmount(() => {
         </section>
 
         <section v-for="(questionItem, index) in detail.questions" :key="questionItem.id" class="question-card panel">
-          <div class="panel__header"><div class="question-title"><span>{{ index + 1 }}</span><div><h3>{{ questionItem.prompt }}</h3><small>{{ questionItem.type }} · {{ questionItem.points }} 分</small></div></div><div v-if="isDraft && canTeachCourse"><el-button link @click="openQuestion(questionItem)">编辑</el-button><el-button link type="danger" @click="deleteQuestion(questionItem)">删除</el-button></div></div>
+          <div class="panel__header"><div class="question-title"><span>{{ index + 1 }}</span><div><SafeMarkdown :content="questionItem.prompt" /><small>{{ questionItem.type }} · {{ questionItem.points }} 分</small></div></div><div v-if="isDraft && canTeachCourse"><el-button link @click="openQuestion(questionItem)">编辑</el-button><el-button link type="danger" @click="deleteQuestion(questionItem)">删除</el-button></div></div>
           <div class="panel__body">
-            <el-radio-group v-if="questionItem.type === 'SINGLE_CHOICE'" :model-value="answerText(questionItem.id)" :disabled="!canEdit" class="option-list" @update:model-value="updateAnswer(questionItem.id, String($event))"><el-radio v-for="option in questionItem.options" :key="option" :value="option">{{ option }}</el-radio></el-radio-group>
-            <el-checkbox-group v-else-if="questionItem.type === 'MULTIPLE_CHOICE'" :model-value="answerArray(questionItem.id)" :disabled="!canEdit" class="option-list" @update:model-value="updateAnswer(questionItem.id, $event as string[])"><el-checkbox v-for="option in questionItem.options" :key="option" :value="option">{{ option }}</el-checkbox></el-checkbox-group>
+            <el-radio-group v-if="questionItem.type === 'SINGLE_CHOICE'" :model-value="answerText(questionItem.id)" :disabled="!canEdit" class="option-list" @update:model-value="updateAnswer(questionItem.id, String($event))"><el-radio v-for="(option,optionIndex) in questionItem.options" :key="option" :value="option">{{ choiceText(questionItem.config,option,optionIndex) }}</el-radio></el-radio-group>
+            <el-checkbox-group v-else-if="questionItem.type === 'MULTIPLE_CHOICE'" :model-value="answerArray(questionItem.id)" :disabled="!canEdit" class="option-list" @update:model-value="updateAnswer(questionItem.id, $event as string[])"><el-checkbox v-for="(option,optionIndex) in questionItem.options" :key="option" :value="option">{{ choiceText(questionItem.config,option,optionIndex) }}</el-checkbox></el-checkbox-group>
             <el-radio-group v-else-if="questionItem.type === 'TRUE_FALSE'" :model-value="answers[questionItem.id]" :disabled="!canEdit" @update:model-value="updateAnswer(questionItem.id, Boolean($event))"><el-radio :value="true">正确</el-radio><el-radio :value="false">错误</el-radio></el-radio-group>
             <div v-else-if="questionItem.type === 'CODE'" class="code-answer">
-              <el-input :model-value="answerText(questionItem.id)" type="textarea" :rows="10" :disabled="!canEdit" placeholder="粘贴代码或描述实现思路" @update:model-value="updateAnswer(questionItem.id, $event)" />
+              <el-input :model-value="answerText(questionItem.id)" type="textarea" :rows="10" :disabled="!canEdit" placeholder="粘贴代码或描述实现思路" @update:model-value="updateRichText(questionItem.id, $event)" />
               <label class="attachment-upload" :class="{ disabled: !canEdit || uploadingQuestionId === questionItem.id }"><input type="file" accept=".zip,application/zip,application/x-zip-compressed" :disabled="!canEdit || uploadingQuestionId === questionItem.id" @change="uploadAttachment(questionItem.id, ($event.target as HTMLInputElement).files)" /><strong>{{ uploadingQuestionId === questionItem.id ? '上传中…' : '上传源码 ZIP' }}</strong><span>{{ attachmentNames[questionItem.id] || '最多 50 MB；不会执行源码' }}</span></label>
             </div>
-            <el-input v-else :model-value="answerText(questionItem.id)" type="textarea" :rows="5" :disabled="!canEdit" placeholder="输入你的答案和推理过程" @update:model-value="updateAnswer(questionItem.id, $event)" />
+            <div v-else><el-input :model-value="answerText(questionItem.id)" type="textarea" :rows="questionItem.type === 'DESIGN' ? 10 : 5" :disabled="!canEdit" :placeholder="questionItem.type === 'DOCUMENT_REPORT' ? '报告补充说明，需上传文档' : '输入你的答案和推理过程'" @update:model-value="updateRichText(questionItem.id, $event)" /></div>
+            <SafeMarkdown v-if="questionItem.config?.examples" :content="questionItem.config.examples" />
+            <p v-if="questionItem.config?.language">{{ questionItem.config.language }} · {{ questionItem.config.constraints }}</p>
+            <pre v-for="(block,blockIndex) in questionItem.config?.codeBlocks" :key="blockIndex"><code>{{ block.code }}</code></pre>
+            <AssignmentMediaList :assignment-id="detail.id" :ids="questionItem.config?.assetIds" />
+            <TeacherReference v-if="canTeachCourse" :question="questionItem" :assignment-id="detail.id" />
+            <template v-if="!['SINGLE_CHOICE','MULTIPLE_CHOICE','TRUE_FALSE'].includes(questionItem.type) && !canTeachCourse">
+              <label class="attachment-upload"><span>{{ questionItem.type === 'DOCUMENT_REPORT' ? '上传报告文档' : '上传图片答案 / 附件' }}</span><input type="file" :accept="questionItem.config?.answerSpec?.allowedFileTypes?.map(ext => '.' + ext).join(',') || '.png,.jpg,.jpeg,.pdf,.docx,.md,.txt'" :disabled="!canEdit || !!uploadingQuestionId" @change="uploadAnswerMedia(questionItem.id, ($event.target as HTMLInputElement).files?.[0])" /></label>
+              <span v-if="uploadingQuestionId === questionItem.id">上传中…</span><AssignmentMediaList :assignment-id="detail.id" :ids="answerAssets(questionItem.id)" />
+              <el-button v-for="assetId in answerAssets(questionItem.id)" :key="assetId" :disabled="!canEdit" link @click="updateAnswer(questionItem.id, { text: answerText(questionItem.id), assetIds: answerAssets(questionItem.id).filter(id => id !== assetId) })">移除附件 {{ assetId }}</el-button>
+            </template>
           </div>
         </section>
 
         <section v-if="!canTeachCourse" class="tutor-panel panel">
           <div class="panel__header"><div><h2>AI Tutor</h2><span class="muted">Tutor 会遵守教师设置的解题策略</span></div></div>
+          <p v-if="tutorTrace" class="muted" style="overflow-wrap:anywhere">{{ tutorTrace }}（Network 请清除筛选或搜索 tutor）</p>
+          <p v-if="tutorLoading" role="status">正在调用模型与授权工具，请稍候；无需重复提交。</p>
           <div class="panel__body stack">
             <div class="tutor-controls"><el-select v-model="tutorQuestionId" placeholder="选择题目"><el-option v-for="(item, index) in detail.questions" :key="item.id" :label="`第 ${index + 1} 题`" :value="item.id" /></el-select><el-select v-model="tutorAction"><el-option label="给我提示" value="HINT" /><el-option label="解释知识点" value="EXPLAIN" /><el-option label="检查思路" value="CHECK_REASONING" /><el-option label="分析错误" value="ANALYZE_ERROR" /><el-option label="评价草稿" value="EVALUATE_DRAFT" /><el-option label="完整解析" value="FULL_SOLUTION" /></el-select><el-button type="primary" :loading="tutorLoading" @click="askTutor">请求辅导</el-button></div>
-            <div v-if="tutorResult" class="tutor-response" :class="{ denied: !tutorResult.allowed }"><strong>{{ tutorResult.allowed ? 'Tutor 建议' : '当前操作受限' }}</strong><p>{{ tutorResult.policyMessage || tutorResult.content }}</p><p v-if="tutorResult.allowed && tutorResult.policyMessage" class="muted">{{ tutorResult.content }}</p><div v-if="tutorResult.citations?.length" class="tutor-citations"><article v-for="citation in tutorResult.citations" :key="citation.id || citation.label"><strong>[{{ citation.id || citation.label }}] {{ citation.documentName || citation.source }}</strong><small>{{ citation.chapter || '' }} {{ citation.page ? `第 ${citation.page} 页` : citation.section || '' }}</small><p>{{ citation.excerpt || citation.quote }}</p></article></div></div>
-            <div v-else-if="tutorError" class="tutor-response denied" role="alert"><strong>Tutor 请求失败</strong><p>{{ tutorError }}</p><el-button @click="askTutor">重试</el-button></div>
+            <div v-if="tutorResult" class="tutor-response" :class="{ denied: !tutorResult.allowed }"><strong>{{ tutorResult.allowed ? 'Tutor 建议' : '当前操作受限' }}</strong><SafeMarkdown :content="tutorResult.policyMessage || tutorResult.content || ''" /><SafeMarkdown v-if="tutorResult.allowed && tutorResult.policyMessage" :content="tutorResult.content || ''" /><div v-if="tutorResult.citations?.length" class="tutor-citations"><article v-for="citation in tutorResult.citations" :key="citation.id || citation.label"><strong>[{{ citation.id || citation.label }}] {{ citation.documentName || citation.source }}</strong><small>{{ citation.chapter || '' }} {{ citation.page ? `第 ${citation.page} 页` : citation.section || '' }}</small><p>{{ citation.excerpt || citation.quote }}</p></article></div></div>
+            <div v-else-if="tutorError" class="tutor-response denied" role="alert"><strong>Tutor 请求未完成</strong><p>{{ tutorError }}</p><el-button @click="askTutor">重试 / 恢复结果</el-button></div>
           </div>
         </section>
       </div>
@@ -707,8 +758,8 @@ onBeforeUnmount(() => {
 
     <el-dialog v-model="createVisible" title="创建作业" width="min(620px, 94vw)"><el-alert title="创建后可在作业详情中继续配置题目、Rubric 与 Tutor 策略。" type="info" :closable="false" /><el-form label-position="top" class="create-form"><el-form-item label="标题"><el-input v-model="createForm.title" /></el-form-item><el-form-item label="说明"><el-input v-model="createForm.description" type="textarea" /></el-form-item><div class="form-grid"><el-form-item label="发布范围"><el-select v-model="createForm.classId" clearable placeholder="全部教学班"><el-option label="全部教学班" value="" /><el-option v-for="item in courseClasses" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item><el-form-item label="最大提交次数"><el-input-number v-model="createForm.maxAttempts" :min="1" :max="20" /></el-form-item></div><div class="form-grid"><el-form-item label="开放时间"><el-date-picker v-model="createForm.availableAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" clearable style="width:100%" /></el-form-item><el-form-item label="截止时间"><el-date-picker v-model="createForm.dueAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" clearable style="width:100%" /></el-form-item></div></el-form><template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" @click="createAssignment">创建草稿</el-button></template></el-dialog>
     <el-dialog v-model="extensionVisible" :title="`为 ${extensionForm.studentName} 设置个别延期`" width="min(460px, 94vw)"><el-form label-position="top"><el-form-item label="学生 ID"><el-input v-model="extensionForm.studentId" placeholder="课程学生的用户 ID" /></el-form-item><el-form-item label="个人截止时间"><el-date-picker v-model="extensionForm.dueAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" clearable style="width:100%" /></el-form-item><el-alert title="清空截止时间并保存，可取消该学生的个别延期。" type="info" :closable="false" /></el-form><template #footer><el-button @click="extensionVisible = false">取消</el-button><el-button type="primary" :disabled="!extensionForm.studentId" @click="saveExtension">保存</el-button></template></el-dialog>
-    <el-dialog v-model="questionVisible" :title="editingQuestionId ? '编辑题目' : '添加题目'" width="min(680px, 94vw)"><el-form label-position="top"><div class="form-grid"><el-form-item label="题型"><el-select v-model="questionForm.type"><el-option v-for="value in (['SINGLE_CHOICE','MULTIPLE_CHOICE','TRUE_FALSE','SHORT_ANSWER','ANALYSIS','DESIGN','CODE'] as const)" :key="value" :label="value" :value="value" /></el-select></el-form-item><el-form-item label="分值"><el-input-number v-model="questionForm.points" :min="0.01" :precision="2" /></el-form-item></div><el-form-item label="题目"><el-input v-model="questionForm.prompt" type="textarea" :rows="4" /></el-form-item><el-form-item v-if="['SINGLE_CHOICE','MULTIPLE_CHOICE'].includes(questionForm.type)" label="选项（每行一个）"><el-input v-model="questionForm.optionsText" type="textarea" :rows="5" /></el-form-item><el-form-item label="参考答案（仅教师可见）"><el-input v-model="questionForm.referenceAnswer" type="textarea" :rows="3" :placeholder="editingQuestionId ? '留空表示保留原参考答案' : ''" /></el-form-item><div class="form-grid"><el-form-item label="知识点"><el-select v-model="questionForm.knowledgePointId" clearable><el-option v-for="point in knowledgePoints" :key="point.id" :label="point.title" :value="point.id" /></el-select></el-form-item><el-form-item label="排序"><el-input-number v-model="questionForm.orderIndex" :min="0" /></el-form-item></div></el-form><template #footer><el-button @click="questionVisible = false">取消</el-button><el-button type="primary" @click="saveQuestion">保存题目</el-button></template></el-dialog>
-    <el-dialog v-model="rubricItemVisible" title="添加 Rubric 分项" width="min(560px, 94vw)"><el-form label-position="top"><el-form-item label="分项名称"><el-input v-model="rubricItemForm.title" /></el-form-item><el-form-item label="说明"><el-input v-model="rubricItemForm.description" type="textarea" /></el-form-item><div class="form-grid"><el-form-item label="关联题目"><el-select v-model="rubricItemForm.questionId" clearable><el-option v-for="(questionItem,index) in detail?.questions || []" :key="questionItem.id" :label="`第 ${index + 1} 题`" :value="questionItem.id" /></el-select></el-form-item><el-form-item label="最高分"><el-input-number v-model="rubricItemForm.maxScore" :min="0.01" :precision="2" /></el-form-item></div><el-form-item label="排序"><el-input-number v-model="rubricItemForm.orderIndex" :min="0" /></el-form-item></el-form><template #footer><el-button @click="rubricItemVisible = false">取消</el-button><el-button type="primary" @click="addRubricItem">添加</el-button></template></el-dialog>
+    <el-dialog v-model="questionVisible" :title="editingQuestionId ? '编辑题目' : '添加题目'" width="min(780px, 94vw)"><TypedQuestionFields v-if="selectedId" :model-value="questionForm" :assignment-id="selectedId" :knowledge-points="knowledgePoints" @update:model-value="Object.assign(questionForm, $event)" /><template #footer><el-button @click="questionVisible = false">取消</el-button><el-button type="primary" @click="saveQuestion">保存题目</el-button></template></el-dialog>
+    <el-dialog v-model="importVisible" title="智能导入题目" width="min(1000px, 96vw)" destroy-on-close :close-on-click-modal="false"><QuestionImportEditor v-if="selectedId" :key="selectedId" :assignment-id="selectedId" :knowledge-points="knowledgePoints" @imported="importVisible = false; selectAssignment(selectedId)" /></el-dialog>
   </div>
 </template>
 

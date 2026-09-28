@@ -20,12 +20,12 @@ public record KnowledgeDocumentView(
         String error,
         Instant ingestedAt,
         Instant createdAt,
-        AsyncJobView job) {
+        AsyncJobView job, Long resourceId) {
     public static KnowledgeDocumentView from(KnowledgeDocument document, AsyncJobView job) {
         return new KnowledgeDocumentView(document.getId(), document.getCourseId(), document.getChapterId(),
                 document.getOriginalName(), document.getMediaType(), document.getSizeBytes(),
                 document.getChecksum(), document.getStatus(), document.getParserVersion(),
                 document.getEmbeddingVersion(), document.getChunkingVersion(), document.getLastError(),
-                document.getIngestedAt(), document.getCreatedAt(), job);
+                document.getIngestedAt(), document.getCreatedAt(), job, document.getResourceId());
     }
 }

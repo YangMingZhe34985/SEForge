@@ -112,6 +112,7 @@ export interface CourseAnnouncement {
 }
 
 export interface CourseResource {
+  externalUrl?: string
   id: string
   courseId: string
   name: string
@@ -125,6 +126,7 @@ export interface CourseResource {
 }
 
 export interface KnowledgeDocument {
+  resourceId?: string
   id: string
   courseId: string
   chapterId?: string
@@ -171,6 +173,8 @@ export interface CourseChapter {
 }
 
 export interface KnowledgePoint {
+  importance?: string
+  sourceCitations?: string
   id: string
   chapterId?: string
   title: string
@@ -218,6 +222,7 @@ export type QuestionType =
   | 'ANALYSIS'
   | 'DESIGN'
   | 'CODE'
+  | 'DOCUMENT_REPORT'
 
 export interface AssignmentSummary {
   id: string
@@ -241,7 +246,24 @@ export interface AssignmentQuestion {
   points: number
   orderIndex: number
   knowledgePointId?: string
+  config?: QuestionContentConfig
+  referenceAnswer?: string
 }
+
+export interface QuestionContentConfig {
+  gradingMode?: 'RULE' | 'AI_ASSISTED' | 'MANUAL'
+  schemaVersion?: number
+  assetIds?: string[]
+  choices?: { id: string; label: string }[]
+  answerSpec?: { correct?: string | string[] | boolean; assetIds?: string[]; allowedFileTypes?: string[] }
+  language?: string
+  constraints?: string
+  examples?: string
+  codeBlocks?: { language: string; code: string }[]
+  knowledgePointIds?: string[]
+}
+
+export interface AssignmentMedia { id: string; fileName: string; mediaType: string; sizeBytes: number; submissionId?: string }
 
 export interface AssignmentDetails extends AssignmentSummary {
   tutorPolicy?: TutorPolicyConfig
@@ -289,7 +311,7 @@ export interface AssignmentRubric {
 
 export interface SubmissionAnswerInput {
   questionId: string
-  answer: string | string[] | boolean
+  answer: string | string[] | boolean | { text: string; assetIds: string[] }
   attachmentObjectKey?: string
   attachmentFileName?: string
 }
@@ -366,6 +388,8 @@ export interface ReviewJob {
 }
 
 export interface RubricEvaluation {
+  questionId?: string
+  source?: 'RULE' | 'AI'
   problems?: string[]
   rubricItemId: string
   title: string
@@ -376,6 +400,8 @@ export interface RubricEvaluation {
 }
 
 export interface ReviewReport {
+  manualQuestionIds?: string[]
+  manualRubricItemIds?: string[]
   model?: string
   promptVersion?: string
   aiTraceId?: string
@@ -403,9 +429,14 @@ export interface GradeRecord {
   assignmentTitle: string
   studentId?: string
   studentName?: string
-  score: number
+  score: number | null
   maxScore: number
-  status: 'PENDING_CONFIRMATION' | 'FINAL'
+  status: 'WAITING_REVIEW' | 'REVIEWED' | 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'PUBLISHED'
+  submissionId: string
+  suggestedScore?: number | null
+  aiTraceId?: string
+  publishedAt?: string
+  rubricItems?: { rubricItemId?: string; questionId?: string; source: string; suggestedScore?: number | null; finalScore?: number | null; feedback?: string }[]
   feedback?: string
   gradedAt?: string
 }

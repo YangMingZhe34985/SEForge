@@ -57,6 +57,7 @@ public class KnowledgeDocumentService {
     private final AsyncJobService jobs;
     private final SEForgeProperties properties;
     private final AuditService audit;
+    private final com.ustb.seforge.course.repository.CourseResourceRepository resources;
 
     public KnowledgeDocumentService(KnowledgeDocumentRepository documents, CourseRepository courses,
                                     CourseChapterRepository chapters,
@@ -64,7 +65,8 @@ public class KnowledgeDocumentService {
                                     IngestionJobRepository ingestions, CourseAccessService access,
                                     ObjectStorage storage, VectorIndex vectors,
                                     VectorIndexVersionPolicy versions, AsyncJobService jobs,
-                                    SEForgeProperties properties, AuditService audit) {
+                                    SEForgeProperties properties, AuditService audit,
+                                    com.ustb.seforge.course.repository.CourseResourceRepository resources) {
         this.documents = documents;
         this.courses = courses;
         this.chapters = chapters;
@@ -77,6 +79,7 @@ public class KnowledgeDocumentService {
         this.jobs = jobs;
         this.properties = properties;
         this.audit = audit;
+        this.resources = resources;
     }
 
     @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
@@ -85,7 +88,7 @@ public class KnowledgeDocumentService {
         if (chapterId != null) requireChapter(courseId, chapterId);
         ValidatedFile validated = validate(file);
         String checksum = sha256(file);
-        KnowledgeDocument existing = documents.findByCourseIdAndChecksum(courseId, checksum).orElse(null);
+        KnowledgeDocument existing = documents.findFirstByCourseIdAndChapterIdAndChecksumOrderByIdDesc(courseId, chapterId, checksum).orElse(null);
         if (existing != null && existing.getStatus() != DocumentStatus.DELETED) {
             AsyncJobView currentJob = currentJob(existing);
             return new DocumentUploadView(KnowledgeDocumentView.from(existing, currentJob), currentJob, true);
@@ -93,12 +96,12 @@ public class KnowledgeDocumentService {
         courses.findForUpdate(courseId)
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Course not found"));
         // Recheck after taking the quota/index lock: another upload may have committed.
-        existing = documents.findByCourseIdAndChecksum(courseId, checksum).orElse(null);
+        existing = documents.findFirstByCourseIdAndChapterIdAndChecksumOrderByIdDesc(courseId, chapterId, checksum).orElse(null);
         if (existing != null && existing.getStatus() != DocumentStatus.DELETED) {
             AsyncJobView current = currentJob(existing);
             return new DocumentUploadView(KnowledgeDocumentView.from(existing, current), current, true);
         }
-        long usedBytes = documents.sumStoredBytesByCourseId(courseId);
+        long usedBytes = resources.sumStoredBytes(courseId);
         long quotaBytes = properties.getStorage().getCourseQuotaBytes();
         if (quotaBytes < 1 || file.getSize() > quotaBytes - Math.min(usedBytes, quotaBytes)) {
             throw new AppException(ErrorCode.VALIDATION_FAILED,
@@ -123,6 +126,10 @@ public class KnowledgeDocumentService {
                     file.getSize(), PARSER_VERSION, writeVersion, CHUNKING_VERSION);
             document = existing;
         }
+        var resource = resources.save(new com.ustb.seforge.course.domain.CourseResource(courseId,chapterId,actorId,
+                validated.fileName(),null,com.ustb.seforge.course.domain.ResourceType.DOCUMENT,objectKey,
+                validated.mediaType(),file.getSize()));
+        document.bindResource(resource.getId());
         document = documents.save(document);
         AsyncJobView job = enqueue(document, actorId, "upload", writeVersion);
         document.queued();
@@ -189,7 +196,8 @@ public class KnowledgeDocumentService {
                 vectors.deleteDocument(embeddingVersion, courseId, documentId);
             }
             chunks.deleteAllByDocumentId(documentId);
-            storage.delete(document.getObjectKey());
+            // Removing RAG membership preserves the Resource and its downloadable original.
+            if (document.getResourceId() == null) storage.delete(document.getObjectKey());
             document.deleted();
             audit.record(actorId, courseId, "COURSE_RESOURCE_DELETE",
                     "KNOWLEDGE_DOCUMENT", documentId, AuditService.SUCCEEDED);
@@ -198,6 +206,48 @@ public class KnowledgeDocumentService {
             if (exception instanceof AppException app) throw app;
             throw new AppException(ErrorCode.INTERNAL_ERROR, "Document deletion could not be completed safely");
         }
+    }
+
+    @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+    public DocumentUploadView includeResource(Long courseId, Long resourceId, Long actorId) {
+        access.requireTeachingStaff(courseId,actorId);
+        courses.findForUpdate(courseId).orElseThrow(()->new AppException(ErrorCode.RESOURCE_NOT_FOUND,"Course not found"));
+        var resource=resources.findByIdAndCourseIdAndStatus(resourceId,courseId,com.ustb.seforge.course.domain.ResourceStatus.ACTIVE)
+                .orElseThrow(()->new AppException(ErrorCode.RESOURCE_NOT_FOUND,"Resource not found"));
+        if(resource.getExternalUrl()!=null || resource.getSizeBytes()==null || resource.getSizeBytes()>MAX_BYTES)
+            throw new AppException(ErrorCode.VALIDATION_FAILED,"Only uploaded supported documents up to 100 MB can join the knowledge base; external URLs are never fetched");
+        var document=documents.findByResourceId(resourceId).orElse(null);
+        if(document!=null && document.getStatus()!=DocumentStatus.DELETED) {
+            var current=currentJob(document);
+            return new DocumentUploadView(KnowledgeDocumentView.from(document,current),current,true);
+        }
+        byte[] bytes;
+        try(var input=storage.open(resource.getObjectKey())) { bytes=input.readNBytes((int)MAX_BYTES+1); }
+        catch(IOException e){throw new AppException(ErrorCode.STORAGE_UNAVAILABLE,"Cannot read resource from MinIO");}
+        MultipartFile file=new StoredFile(resource.getName(),resource.getContentType(),bytes);
+        var valid=validate(file);
+        String writeVersion=versions.writeVersion();
+        if(document==null) document=new KnowledgeDocument(courseId,resource.getChapterId(),actorId,valid.fileName(),resource.getObjectKey(),
+                valid.mediaType(),bytes.length,sha256(file),PARSER_VERSION,writeVersion,CHUNKING_VERSION);
+        else document.replaceUpload(resource.getChapterId(),actorId,valid.fileName(),resource.getObjectKey(),valid.mediaType(),bytes.length,PARSER_VERSION,writeVersion,CHUNKING_VERSION);
+        document.bindResource(resourceId);
+        documents.save(document);
+        var job=enqueue(document,actorId,"include:"+UUID.randomUUID(),writeVersion);
+        document.queued();
+        return new DocumentUploadView(KnowledgeDocumentView.from(document,job),job,false);
+    }
+
+    public static boolean supports(String name) {
+        int dot=name==null?-1:name.lastIndexOf('.');
+        return dot>=0 && EXTENSIONS.contains(name.substring(dot+1).toLowerCase(Locale.ROOT));
+    }
+
+    private record StoredFile(String name,String contentType,byte[] bytes) implements MultipartFile {
+        public String getName(){return "file";} public String getOriginalFilename(){return name;}
+        public String getContentType(){return contentType;} public boolean isEmpty(){return bytes.length==0;}
+        public long getSize(){return bytes.length;} public byte[] getBytes(){return bytes;}
+        public InputStream getInputStream(){return new java.io.ByteArrayInputStream(bytes);}
+        public void transferTo(java.io.File destination)throws IOException{throw new IOException("Direct filesystem transfer is not supported");}
     }
 
     public InputStream open(KnowledgeDocument document) {

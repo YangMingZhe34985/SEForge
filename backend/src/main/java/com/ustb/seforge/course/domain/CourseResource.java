@@ -24,6 +24,8 @@ public class CourseResource extends BaseEntity {
 
     @Column(columnDefinition = "text")
     private String description;
+    @Column(name="external_url", length=2048)
+    private String externalUrl;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "resource_type", nullable = false, length = 20)
@@ -70,4 +72,7 @@ public class CourseResource extends BaseEntity {
     public Long getSizeBytes() { return sizeBytes; }
     public ResourceStatus getStatus() { return status; }
     public void remove() { status = ResourceStatus.DELETED; }
+    public String getExternalUrl() { return externalUrl; }
+    public void externalUrl(String url) { externalUrl = url; }
+    public void updateInfo(String name, String description) { this.name=name.trim(); this.description=description; }
 }

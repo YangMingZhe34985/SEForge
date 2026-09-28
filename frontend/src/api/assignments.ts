@@ -1,4 +1,4 @@
-import { apiRequest } from './client'
+import { apiRequest, apiBlob } from './client'
 import type {
   AssignmentDetails,
   AssignmentQuestion,
@@ -16,6 +16,19 @@ import type {
 } from '@/types/domain'
 
 export const assignmentApi = {
+  extractQuestions: (assignmentId: string, sourceFile: string | string[], reparse = false, reparseFile?: string) => apiRequest<QuestionImport>({ url: `/assignments/${assignmentId}/question-imports`, method: 'POST', params: { sourceFile: Array.isArray(sourceFile) ? sourceFile.join(',') : sourceFile, reparse, reparseFile }, timeout: 630000 }),
+  confirmImport: (assignmentId: string, id: string, questions: { draftKey: string; question: AssignmentQuestionInput }[]) => apiRequest<AssignmentQuestion[]>({ url: `/assignments/${assignmentId}/question-imports/${id}/confirm`, method: 'POST', data: { questions } }),
+  referenceMarkdown: (assignmentId: string, sourceFile: string) => apiRequest<{ markdown: string; warning: string }>({ url: `/assignments/${assignmentId}/reference-markdown-drafts`, method: 'POST', params: { sourceFile }, timeout: 630000 }),
+  media: (assignmentId: string, id: string) => apiRequest<import('@/types/domain').AssignmentMedia>({ url: `/assignments/${assignmentId}/media/${id}` }),
+  mediaBlob: (assignmentId: string, id: string) => apiBlob(`/assignments/${assignmentId}/media/${id}/download`),
+  uploadMedia: (assignmentId: string, purpose: 'QUESTION_CONTENT' | 'REFERENCE_ANSWER' | 'CONTENT' | 'REFERENCE' | 'ANSWER' | 'IMPORT', file: File, questionId?: string, expectedAttempt?: number, startNextAttempt = false) => {
+    const data = new FormData()
+    data.append('purpose', purpose); data.append('file', file)
+    if (questionId) data.append('questionId', questionId)
+    if (expectedAttempt !== undefined) data.append('expectedAttempt', String(expectedAttempt))
+    data.append('startNextAttempt', String(startNextAttempt))
+    return apiRequest<import('@/types/domain').AssignmentMedia>({ url: `/assignments/${assignmentId}/media`, method: 'POST', data })
+  },
   list: (courseId: string) =>
     apiRequest<PageResult<AssignmentSummary>>({ url: `/courses/${courseId}/assignments`, params: { page: 0, size: 100 } }),
   get: (assignmentId: string) => apiRequest<AssignmentDetails>({ url: `/assignments/${assignmentId}` }),
@@ -68,10 +81,21 @@ export const assignmentApi = {
       data,
     })
   },
-  tutor: (assignmentId: string, questionId: string, action: TutorAction, draftAnswer: SubmissionAnswerInput['answer']) =>
+  tutor: (assignmentId: string, questionId: string, action: TutorAction, draftAnswer: SubmissionAnswerInput['answer'], requestKey: string = crypto.randomUUID()) =>
     apiRequest<TutorResponse>({
       url: `/assignments/${assignmentId}/tutor`,
       method: 'POST',
-      data: { questionId, action, draftAnswer },
+      // Tutor may require several model/tool round trips. Never inherit the 30s CRUD deadline.
+      timeout: 630_000,
+      headers: { 'X-Trace-Id': requestKey },
+      data: { questionId, action, draftAnswer, requestKey },
     }),
+}
+
+export interface QuestionImport {
+  id: string; sourceFile: string; sourceName: string; confirmed: boolean
+  sources?: { id: string; name: string }[]
+  questions: { draftKey: string; type: import('@/types/domain').QuestionType | null; contentMarkdown: string
+    choices: { id: string; label: string }[]; correctAnswer: string | string[] | boolean | null
+    referenceAnswer: string; score: number | null; order: number; sourceFile?: string; sourcePage: number; sourceRegion: number[]; warnings: string[] }[]
 }

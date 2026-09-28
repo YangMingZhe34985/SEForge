@@ -71,11 +71,17 @@ public class SubmissionCompletenessValidator {
             case SINGLE_CHOICE -> validateSingleChoice(question, value);
             case MULTIPLE_CHOICE -> validateMultipleChoice(question, value);
             case TRUE_FALSE -> value.isBoolean() ? null : "A boolean answer is required";
-            case SHORT_ANSWER, ANALYSIS, DESIGN -> nonBlankText(value)
+            case SHORT_ANSWER, ANALYSIS, DESIGN -> nonBlankText(value) || rich(value)
                     ? null : "A non-blank text answer is required";
-            case CODE -> nonBlankText(value) || nonBlank(answer.getAttachmentObjectKey())
+            case DOCUMENT_REPORT -> value.isObject() && value.path("assetIds").isArray() && !value.path("assetIds").isEmpty()
+                    ? null : "A report file is required";
+            case CODE -> nonBlankText(value) || rich(value) || nonBlank(answer.getAttachmentObjectKey())
                     ? null : "Code text or a source attachment is required";
         };
+    }
+
+    private boolean rich(JsonNode value) {
+        return value.isObject() && (nonBlankText(value.path("text")) || value.path("assetIds").isArray() && !value.path("assetIds").isEmpty());
     }
 
     private String validateSingleChoice(AssignmentQuestion question, JsonNode value) {

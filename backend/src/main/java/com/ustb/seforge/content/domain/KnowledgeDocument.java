@@ -15,7 +15,7 @@ import java.time.Instant;
         @Index(name = "idx_knowledge_document_course_status", columnList = "course_id,status,created_at")
 }, uniqueConstraints = {
         @UniqueConstraint(name = "uk_knowledge_document_object", columnNames = "object_key"),
-        @UniqueConstraint(name = "uk_knowledge_document_checksum", columnNames = {"course_id", "checksum"})
+        @UniqueConstraint(name = "uk_knowledge_document_resource", columnNames = "resource_id")
 })
 public class KnowledgeDocument extends BaseEntity {
     @Column(name = "course_id", nullable = false)
@@ -151,6 +151,7 @@ public class KnowledgeDocument extends BaseEntity {
 
     public Long getCourseId() { return courseId; }
     public Long getResourceId() { return resourceId; }
+    public void bindResource(Long id) { resourceId = id; }
     public Long getChapterId() { return chapterId; }
     public Long getUploaderId() { return uploaderId; }
     public String getOriginalName() { return originalName; }

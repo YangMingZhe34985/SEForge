@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChatDotRound, Close, Plus, Promotion, Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import SafeMarkdown from '@/components/SafeMarkdown.vue'
 import { assistantApi } from '@/api/assistant'
 import { ApiError } from '@/api/client'
 import { streamJsonSse, type TypedSseEvent } from '@/api/sse'
 import type { ChatMessage, Conversation } from '@/types/domain'
 
 const route = useRoute()
+const router = useRouter()
 const courseId = computed(() => String(route.params.courseId))
 const conversations = ref<Conversation[]>([])
 const activeConversationId = ref<string | null>(null)
@@ -21,6 +23,8 @@ const sending = ref(false)
 const lastQuestion = ref('')
 const streamError = ref('')
 const messageList = ref<HTMLElement>()
+const generationRequestId = ref<string | null>(null)
+let recoveryTimer: ReturnType<typeof setTimeout> | undefined
 let courseGeneration = 0
 let conversationRequestGeneration = 0
 let activeStream: {
@@ -39,7 +43,8 @@ async function loadConversations(requestedCourseId = courseId.value, courseVersi
     const page = await assistantApi.conversations(requestedCourseId)
     if (courseVersion !== courseGeneration || requestedCourseId !== courseId.value) return
     conversations.value = page.items
-    const firstId = conversations.value[0]?.id
+    const preferred = String(route.query.conversation || sessionStorage.getItem(`assistant:${requestedCourseId}`) || '')
+    const firstId = conversations.value.find((item) => String(item.id) === preferred)?.id || conversations.value[0]?.id
     if (firstId) await selectConversation(firstId, requestedCourseId, courseVersion)
     else await createConversation(requestedCourseId, courseVersion)
   } catch (error) {
@@ -65,18 +70,23 @@ async function selectConversation(
   requestedCourseId = courseId.value,
   courseVersion = courseGeneration,
 ) {
-  if (sending.value) stopStream()
+  detachStream()
   streamError.value = ''
   lastQuestion.value = ''
   const requestVersion = ++conversationRequestGeneration
   activeConversationId.value = id
+  sessionStorage.setItem(`assistant:${requestedCourseId}`, String(id))
+  void router.replace({ query: { ...route.query, conversation: id } })
   messages.value = []
   loading.value = true
   try {
+    const state = await assistantApi.generation(requestedCourseId, id)
     const page = await assistantApi.messages(requestedCourseId, id)
     if (courseVersion !== courseGeneration || requestVersion !== conversationRequestGeneration
       || requestedCourseId !== courseId.value || activeConversationId.value !== id) return
     messages.value = page.items
+    applyGeneration(state)
+    if (sending.value) scheduleRecovery()
     await scrollToBottom()
   } catch (error) {
     if (courseVersion === courseGeneration && requestVersion === conversationRequestGeneration) {
@@ -87,9 +97,76 @@ async function selectConversation(
   }
 }
 
+async function renameConversation(id: string) {
+  const course = courseId.value; const version = courseGeneration
+  try {
+    const current = conversations.value.find(c => c.id === id)
+    const input = await ElMessageBox.prompt('请输入会话名称', '重命名会话', { inputValue: current?.title, inputValidator: value => !!value?.trim() && value.length <= 255 || '请输入 1 至 255 个字符' })
+    const updated = await assistantApi.renameConversation(course, id, input.value)
+    if (course !== courseId.value || version !== courseGeneration) return
+    const index = conversations.value.findIndex(c => c.id === id)
+    if (index >= 0) conversations.value[index] = updated
+  } catch (e) { if (e !== 'cancel' && e !== 'close') ElMessage.error(e instanceof Error ? e.message : '重命名失败') }
+}
+
+async function deleteConversation(id: string) {
+  const course = courseId.value; const version = courseGeneration
+  try {
+    await ElMessageBox.confirm('将永久删除此会话的消息、引用和反馈，无法恢复。正在生成的会话需要先取消。', '删除会话', { type: 'warning' })
+    await assistantApi.deleteConversation(course, id)
+    if (course !== courseId.value || version !== courseGeneration) return
+    conversations.value = conversations.value.filter(item => item.id !== id)
+    if (activeConversationId.value === id) {
+      detachStream(); conversationRequestGeneration++; messages.value = []; activeConversationId.value = null
+      sessionStorage.removeItem(`assistant:${course}`)
+      await router.replace({ query: { ...route.query, conversation: undefined } })
+      const first = conversations.value[0]
+      if (first) await selectConversation(first.id)
+      else await createConversation()
+    }
+    ElMessage.success('会话已删除')
+  } catch (e) { if (e !== 'cancel' && e !== 'close') ElMessage.error(e instanceof Error ? e.message : '删除失败') }
+}
+
 async function scrollToBottom() {
   await nextTick()
   if (messageList.value) messageList.value.scrollTop = messageList.value.scrollHeight
+}
+
+function applyGeneration(state: Awaited<ReturnType<typeof assistantApi.generation>>) {
+  generationRequestId.value = state?.requestId || null
+  sending.value = state?.status === 'PROCESSING'
+  if (state) lastQuestion.value = state.question
+  streamError.value = state && ['FAILED', 'CANCELLED'].includes(state.status)
+    ? `${state.errorMessage || '生成失败，可重试'}（${state.errorCode || state.status}），追踪号 ${state.traceId}` : ''
+}
+
+function scheduleRecovery() {
+  clearTimeout(recoveryTimer)
+  recoveryTimer = setTimeout(() => void recoverGeneration(), 1500)
+}
+
+async function recoverGeneration(expectedRequestId?: string) {
+  const id = activeConversationId.value
+  const course = courseId.value
+  const version = conversationRequestGeneration
+  if (!id || activeStream) return
+  const current = () => version === conversationRequestGeneration && id === activeConversationId.value && course === courseId.value
+  try {
+    const state = await assistantApi.generation(course, id)
+    const page = await assistantApi.messages(course, id)
+    if (!current() || activeStream) return
+    if (expectedRequestId && state?.requestId !== expectedRequestId && state?.status !== 'PROCESSING') return
+    messages.value = page.items
+    applyGeneration(state)
+    if (sending.value) scheduleRecovery()
+    await scrollToBottom()
+  } catch (error) {
+    if (!current()) return
+    streamError.value = `状态恢复失败：${error instanceof Error ? error.message : '请检查网络'}；将自动重试。`
+    sending.value = true
+    scheduleRecovery()
+  }
 }
 
 function applyStreamEvent(event: TypedSseEvent, assistantMessage: ChatMessage, conversationId: string) {
@@ -140,6 +217,8 @@ async function sendMessage(retryText?: string) {
     courseVersion,
   }
   activeStream = stream
+  generationRequestId.value = stream.requestId
+  let completed = false
   await scrollToBottom()
 
   try {
@@ -152,6 +231,7 @@ async function sendMessage(retryText?: string) {
           if (activeStream === stream && courseVersion === courseGeneration
             && activeConversationId.value === conversationId) {
             applyStreamEvent(event, assistantMessage, conversationId)
+            if (event.type === 'done') completed = true
           }
         },
       },
@@ -168,23 +248,32 @@ async function sendMessage(retryText?: string) {
       assistantMessage.pending = false
       sending.value = false
       activeStream = null
+      if (!completed) await recoverGeneration(stream.requestId)
     }
   }
 }
 
-function stopStream() {
+function detachStream() {
+  clearTimeout(recoveryTimer)
   const stream = activeStream
-  if (!stream) return
   activeStream = null
-  stream.controller.abort()
+  stream?.controller.abort()
   sending.value = false
-  streamError.value = '已停止生成；未完成的回答不会保存，可以重试。'
-  void assistantApi.cancel(stream.courseId, stream.conversationId, stream.requestId).catch(() => undefined)
-  for (let index = messages.value.length - 1; index >= 0; index -= 1) {
-    if (messages.value[index]?.pending) {
-      messages.value[index].pending = false
-      break
-    }
+  generationRequestId.value = null
+}
+
+async function stopStream() {
+  const id = activeConversationId.value
+  const requestId = generationRequestId.value
+  const version = conversationRequestGeneration
+  if (!id || !requestId) return
+  try {
+    await assistantApi.cancel(courseId.value, id, requestId)
+    if (version !== conversationRequestGeneration) return
+    detachStream()
+    await recoverGeneration()
+  } catch (error) {
+    if (version === conversationRequestGeneration) ElMessage.error(error instanceof Error ? error.message : '取消失败，请重试')
   }
 }
 
@@ -202,7 +291,7 @@ async function sendFeedback(messageId: string, helpful: boolean) {
 }
 
 function activateCourse() {
-  stopStream()
+  detachStream()
   question.value = ''
   lastQuestion.value = ''
   courseGeneration += 1
@@ -218,7 +307,7 @@ function activateCourse() {
 watch(courseId, activateCourse)
 onMounted(activateCourse)
 onBeforeUnmount(() => {
-  stopStream()
+  detachStream()
   courseGeneration += 1
   conversationRequestGeneration += 1
 })
@@ -233,9 +322,9 @@ onBeforeUnmount(() => {
     <section class="assistant-layout panel" v-loading="loading">
       <aside class="conversation-list">
         <div class="conversation-list__header"><strong>会话记录</strong><span>{{ conversations.length }}</span></div>
-        <button v-for="conversation in conversations" :key="conversation.id" type="button" :class="{ active: conversation.id === activeConversationId }" @click="selectConversation(conversation.id)">
+        <div v-for="conversation in conversations" :key="conversation.id"><button type="button" :class="{ active: conversation.id === activeConversationId }" @click="selectConversation(conversation.id)">
           <ChatDotRound /><span><strong>{{ conversation.title }}</strong><small>{{ new Date(conversation.updatedAt).toLocaleDateString() }}</small></span>
-        </button>
+        </button><el-button link :aria-label="`重命名会话 ${conversation.title}`" @click="renameConversation(conversation.id)">重命名</el-button><el-button link type="danger" :aria-label="`删除会话 ${conversation.title}`" @click="deleteConversation(conversation.id)">删除</el-button></div>
       </aside>
 
       <div class="chat-workspace">
@@ -245,7 +334,9 @@ onBeforeUnmount(() => {
           <article v-for="message in messages" :key="message.id" class="message" :class="`message--${message.role.toLowerCase()}`">
             <div class="message__label">{{ message.role === 'USER' ? '你' : 'SEForge Assistant' }}</div>
             <div class="message__bubble">
-              <p>{{ message.content }}<span v-if="message.pending" class="typing-cursor" /></p>
+              <SafeMarkdown v-if="message.role === 'ASSISTANT'" :content="message.content" />
+              <p v-else>{{ message.content }}</p>
+              <span v-if="message.pending" class="typing-cursor" />
               <div v-if="message.citations?.length" class="citations">
                 <strong>引用依据</strong>
                 <div v-for="(citation, index) in message.citations" :key="citation.id || `${citation.documentId}-${index}`" class="citation-card">
@@ -257,7 +348,8 @@ onBeforeUnmount(() => {
           </article>
         </div>
 
-        <div v-if="streamError" class="stream-error"><span>{{ streamError }}</span><el-button :icon="Refresh" text @click="sendMessage(lastQuestion)">重试</el-button></div>
+        <div v-if="sending" class="generation-status" role="status">正在生成，离开页面不会取消；返回后将恢复完整回答。</div>
+        <div v-if="streamError" class="stream-error"><span>{{ streamError }}</span><el-button :icon="Refresh" text :disabled="sending || !lastQuestion" @click="sendMessage(lastQuestion)">重试</el-button></div>
         <div class="composer">
           <el-input v-model="question" type="textarea" :rows="3" resize="none" maxlength="4000" show-word-limit placeholder="输入与本课程相关的问题…" @keydown.ctrl.enter="sendMessage()" />
           <div class="composer__actions"><span>Ctrl + Enter 发送</span><el-button v-if="sending" :icon="Close" @click="stopStream">停止</el-button><el-button v-else type="primary" :icon="Promotion" :disabled="!question.trim()" @click="sendMessage()">发送</el-button></div>

@@ -63,7 +63,7 @@ public class RubricService {
 
     @Transactional
     public RubricView upsert(Long assignmentId, Long userId, UpsertRubricRequest request) {
-        Assignment assignment = requireAssignment(assignmentId);
+        Assignment assignment = lockedAssignment(assignmentId);
         courseAccess.requireTeachingStaff(assignment.getCourseId(), userId);
         assignment.requireDraft();
         Optional<Rubric> existing = rubrics.findByAssignmentId(assignmentId);
@@ -78,6 +78,12 @@ public class RubricService {
         }
         if (targetStatus != RubricStatus.DRAFT) {
             validateExactTotal(request.totalScore(), currentItems);
+            for (var q : questions.findAllByAssignmentIdOrderBySortOrderAscIdAsc(assignmentId)) {
+                var allocated = currentItems.stream().filter(i -> q.getId().equals(i.getQuestionId()))
+                        .map(RubricItem::getMaxScore).reduce(BigDecimal.ZERO,BigDecimal::add);
+                if (allocated.compareTo(q.getMaxScore()) > 0 || (QuestionGrading.mode(q) == QuestionGrading.Mode.AI_ASSISTED && allocated.compareTo(q.getMaxScore()) != 0))
+                    throw QuestionContent.invalid("AI_ASSISTED 题目 Rubric 总分必须等于题目分值，且任何题目不得超额分配");
+            }
         }
         rubric.update(request.title(), request.totalScore(), request.status());
         return view(rubrics.save(rubric));
@@ -85,14 +91,14 @@ public class RubricService {
 
     @Transactional
     public RubricItemView addItem(Long assignmentId, Long userId, UpsertRubricItemRequest request) {
-        Assignment assignment = requireAssignment(assignmentId);
+        Assignment assignment = lockedAssignment(assignmentId);
         courseAccess.requireTeachingStaff(assignment.getCourseId(), userId);
         assignment.requireDraft();
         Rubric rubric = rubrics.findByAssignmentId(assignmentId)
                 .orElseThrow(() -> notFound("Rubric not found"));
         requireEditable(rubric);
-        validateQuestion(assignmentId, request.questionId());
-        RubricItem item = items.save(new RubricItem(rubric.getId(), request.questionId(), request.title(),
+        Long questionId = validateAllocation(assignmentId, rubric.getId(), null, request);
+        RubricItem item = items.save(new RubricItem(rubric.getId(), questionId, request.title(),
                 request.description(), request.maxScore(), json(request.criteria()), request.orderIndex()));
         return itemView(item);
     }
@@ -100,23 +106,23 @@ public class RubricService {
     @Transactional
     public RubricItemView updateItem(Long assignmentId, Long itemId, Long userId,
                                      UpsertRubricItemRequest request) {
-        Assignment assignment = requireAssignment(assignmentId);
+        Assignment assignment = lockedAssignment(assignmentId);
         courseAccess.requireTeachingStaff(assignment.getCourseId(), userId);
         assignment.requireDraft();
         Rubric rubric = rubrics.findByAssignmentId(assignmentId)
                 .orElseThrow(() -> notFound("Rubric not found"));
         requireEditable(rubric);
-        validateQuestion(assignmentId, request.questionId());
+        Long questionId = validateAllocation(assignmentId, rubric.getId(), itemId, request);
         RubricItem item = items.findByIdAndRubricId(itemId, rubric.getId())
                 .orElseThrow(() -> notFound("Rubric item not found"));
-        item.update(request.questionId(), request.title(), request.description(), request.maxScore(),
+        item.update(questionId, request.title(), request.description(), request.maxScore(),
                 json(request.criteria()), request.orderIndex());
         return itemView(item);
     }
 
     @Transactional
     public void deleteItem(Long assignmentId, Long itemId, Long userId) {
-        Assignment assignment = requireAssignment(assignmentId);
+        Assignment assignment = lockedAssignment(assignmentId);
         courseAccess.requireTeachingStaff(assignment.getCourseId(), userId);
         assignment.requireDraft();
         Rubric rubric = rubrics.findByAssignmentId(assignmentId)
@@ -138,10 +144,25 @@ public class RubricService {
                 item.getMaxScore(), map(item.getCriteriaJson()), item.getSortOrder());
     }
 
-    private void validateQuestion(Long assignmentId, Long questionId) {
-        if (questionId != null && questions.findByIdAndAssignmentId(questionId, assignmentId).isEmpty()) {
-            throw notFound("Question not found");
+    private Long validateAllocation(Long assignmentId, Long rubricId, Long excludedItem, UpsertRubricItemRequest request) {
+        Long questionId = request.questionId();
+        if (questionId == null) {
+            var all = questions.findAllByAssignmentIdOrderBySortOrderAscIdAsc(assignmentId);
+            if (all.size() == 1) questionId = all.getFirst().getId();
+            else throw QuestionContent.invalid("请选择 Rubric 关联题目");
         }
+        var question = questions.findByIdAndAssignmentId(questionId, assignmentId).orElseThrow(() -> notFound("Question not found"));
+        BigDecimal allocated = items.findAllByRubricIdOrderBySortOrderAscIdAsc(rubricId).stream()
+                .filter(i -> !i.getId().equals(excludedItem) && question.getId().equals(i.getQuestionId()))
+                .map(RubricItem::getMaxScore).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (request.maxScore() == null || request.maxScore().signum() <= 0 || request.maxScore().stripTrailingZeros().scale() > 2
+                || allocated.add(request.maxScore()).compareTo(question.getMaxScore()) > 0)
+            throw QuestionContent.invalid("Rubric 已分配分值不得超过题目分值；剩余 " + question.getMaxScore().subtract(allocated));
+        return questionId;
+    }
+
+    private Assignment lockedAssignment(Long id) {
+        return assignments.findByIdForUpdate(id).orElseThrow(() -> notFound("Assignment not found"));
     }
 
     private void requireEditable(Rubric rubric) {

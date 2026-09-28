@@ -26,6 +26,7 @@ public class SEForgeProperties {
         private String fastModel = "deepseek-chat";
         private String reasoningModel = "deepseek-reasoner";
         private String codingModel = "deepseek-chat";
+        private String visionModel = "";
         private String dashscopeApiKey = "";
         private String dashscopeBaseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
         private String fallbackModel = "qwen-plus";
@@ -46,6 +47,8 @@ public class SEForgeProperties {
         public void setReasoningModel(String value) { this.reasoningModel = value; }
         public String getCodingModel() { return codingModel; }
         public void setCodingModel(String value) { this.codingModel = value; }
+        public String getVisionModel() { return visionModel; }
+        public void setVisionModel(String value) { this.visionModel = value; }
         public String getDashscopeApiKey() { return dashscopeApiKey; }
         public void setDashscopeApiKey(String value) { this.dashscopeApiKey = value; }
         public String getDashscopeBaseUrl() { return dashscopeBaseUrl; }

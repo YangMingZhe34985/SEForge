@@ -21,6 +21,14 @@ const codeJob = {
 
 describe('reviewApi contracts', () => {
   beforeEach(() => requestMock.mockReset())
+  it('documents use a submission or explicit artifact, never a knowledge document', async () => {
+    requestMock.mockResolvedValue({ ...codeJob, type: 'DOCUMENT' })
+    await reviewApi.createDocument('42', { submissionId: '77', questionId: '3', mediaId: '9' }, 'SRS')
+    expect(requestMock.mock.calls[0][0].data).toMatchObject({ submissionId: '77', questionId: '3', mediaId: '9' })
+    expect(requestMock.mock.calls[0][0].data).not.toHaveProperty('documentId')
+    await reviewApi.createDocument('42', { artifactId: '11' }, 'README')
+    expect(requestMock.mock.calls[1][0].data).toMatchObject({ artifactId: '11' })
+  })
 
   it('queues server-side Sonar analysis without accepting client findings', async () => {
     requestMock.mockResolvedValueOnce(codeJob)
@@ -97,5 +105,16 @@ describe('reviewApi contracts', () => {
     })
     expect(result).toMatchObject({ page: 3, size: 20, total: 81 })
     expect(result.items).toHaveLength(1)
+  })
+  it('keeps rubric-free RULE and MANUAL question identities through teacher confirmation', async () => {
+    requestMock.mockResolvedValueOnce({ id: 'r', reviewJobId: '91', summary: 'Rules', model: 'RULE', result: {
+      totalSuggestedScore: 4, rubricItems: [], questionScores: [{ questionId: 7, suggestedScore: 4, feedback: 'Exact match', evidence: [] }], manualQuestionIds: [8],
+    } })
+    const report = await reviewApi.report('42', { ...codeJob, type: 'ASSIGNMENT', subjectName: 'assignment' } as ReviewJob)
+    expect(report.rubricItems).toEqual([expect.objectContaining({ questionId: '7', source: 'RULE', suggestedScore: 4 })])
+    expect(report.manualQuestionIds).toEqual(['8'])
+    requestMock.mockResolvedValueOnce({})
+    await reviewApi.confirmGrade('77', 9, '', undefined, [{ questionId: '7', score: 4 }, { questionId: '8', score: 5 }])
+    expect(requestMock).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ rubricItems: [{ questionId: '7', score: 4 }, { questionId: '8', score: 5 }] }) }))
   })
 })

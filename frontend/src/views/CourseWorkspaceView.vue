@@ -4,7 +4,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
-import StatusBadge from '@/components/StatusBadge.vue'
+import SafeMarkdown from '@/components/SafeMarkdown.vue'
+import TeachingResourceList from '@/components/TeachingResourceList.vue'
+import KnowledgePointDraftEditor from '@/components/KnowledgePointDraftEditor.vue'
+import { teachingContentApi, type PointSource } from '@/api/teachingContent'
 import { courseApi } from '@/api/courses'
 import { jobApi } from '@/api/jobs'
 import { useCourseStore } from '@/stores/courses'
@@ -28,7 +31,15 @@ const courseId = computed(() => String(route.params.courseId ?? ''))
 // Route names are workspace-scoped (teacher-course-* / student-course-*); the shared
 // component derives link targets from the workspace the route belongs to.
 const workspace = computed<'teacher' | 'student'>(() => (route.meta.workspace === 'teacher' ? 'teacher' : 'student'))
-const activeTab = ref('resources')
+const activeTab = ref('chapters')
+const selectedChapterId = ref('')
+const selectedChapter = computed(() => chapters.value.find(c => c.id === selectedChapterId.value))
+const chapterFiles = ref<{ file: File; include: boolean }[]>([])
+const chapterSaving = ref(false)
+const includeChapterUploads = ref(true)
+function supportsRag(name: string) { return /\.(pdf|pptx?|docx|md|txt)$/i.test(name) }
+function chooseChapterFiles(files: FileList | null) { chapterFiles.value = Array.from(files || []).map(file => ({ file, include: supportsRag(file.name) })) }
+function pointSources(point: KnowledgePoint): PointSource[] { try { return JSON.parse(point.sourceCitations || '[]') as PointSource[] } catch { return [] } }
 const resourceVisible = ref(false)
 const chapterVisible = ref(false)
 const pointVisible = ref(false)
@@ -37,7 +48,6 @@ const inviteVisible = ref(false)
 const announcementVisible = ref(false)
 const editVisible = ref(false)
 const detailLoading = ref(false)
-const documentUploading = ref(false)
 const resourceUploading = ref(false)
 const editingChapterId = ref<string | null>(null)
 const editingPointId = ref<string | null>(null)
@@ -135,6 +145,7 @@ async function loadDetails(targetCourseId: string | null) {
     resources.value = resourceList
     documents.value = documentList
     chapters.value = chapterList.sort((a, b) => a.sortOrder - b.sortOrder)
+    if (!chapters.value.some(c => c.id === selectedChapterId.value)) selectedChapterId.value = chapters.value[0]?.id || ''
     knowledgePoints.value = pointList
     announcements.value = announcementPageResult.items
     announcementPage.value = announcementPageResult.page + 1
@@ -210,32 +221,41 @@ async function toggleArchive() {
 }
 
 async function createResource() {
-  if (!selected.value || !resourceForm.name.trim() || !resourceForm.objectKey.trim()) return ElMessage.warning('请填写名称和对象键')
-  const requiredPrefix = `courses/${selected.value.id}/`
-  if (!resourceForm.objectKey.startsWith(requiredPrefix) || resourceForm.objectKey.includes('..') || resourceForm.objectKey.includes('\\')) {
-    return ElMessage.warning(`外部对象标识必须以 ${requiredPrefix} 开头`)
-  }
+  if (!selected.value || !resourceForm.name.trim() || !/^https?:\/\//i.test(resourceForm.objectKey)) return ElMessage.warning('请填写名称和 HTTP(S) 链接')
   try {
-    resources.value.unshift(await courseApi.createResource(selected.value.id, {
-      ...resourceForm,
-      chapterId: resourceForm.chapterId || undefined,
-      contentType: resourceForm.contentType || undefined,
-    }))
+    resources.value.unshift(await teachingContentApi.link(selected.value.id, { name: resourceForm.name, url: resourceForm.objectKey, description: resourceForm.description, chapterId: resourceForm.chapterId || undefined }))
     resourceVisible.value = false
     Object.assign(resourceForm, { name: '', description: '', resourceType: 'LINK', objectKey: '', contentType: '', chapterId: '' })
-    ElMessage.success('外部对象元数据已登记；此操作未上传或校验文件')
-  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '资源登记失败') }
+    ElMessage.success('参考链接已保存')
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '链接保存失败') }
 }
 
-async function uploadResource(files: FileList | null) {
-  const file = files?.item(0)
-  if (!selected.value || !file) return
+async function uploadResource(files: FileList | null, chapterId?: string) {
+  if (!selected.value || !files?.length || resourceUploading.value) return
+  const target = selected.value.id
   resourceUploading.value = true
   try {
-    resources.value.unshift(await courseApi.uploadResource(selected.value.id, file))
-    ElMessage.success('课程原始资料已上传')
-  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '资源上传失败') }
+    for (const file of Array.from(files)) await courseApi.uploadResource(target, file, chapterId, !!chapterId && includeChapterUploads.value && supportsRag(file.name))
+    await loadDetails(target)
+    ElMessage.success('资料已上传')
+  } catch (error) { await loadDetails(target); ElMessage.error(error instanceof Error ? error.message : '资料上传失败，已成功的资料会保留，请只重试失败文件') }
   finally { resourceUploading.value = false }
+}
+
+async function includeResource(resource: CourseResource) {
+  if (!selected.value) return
+  try { await teachingContentApi.include(selected.value.id, resource.id); await loadDetails(selected.value.id) }
+  catch (error) { ElMessage.error(error instanceof Error ? error.message : '加入知识库失败') }
+}
+
+async function editResource(resource: CourseResource) {
+  if (!selected.value) return
+  try {
+    const name = await ElMessageBox.prompt('修改显示名称（文件保留扩展名）', '编辑资料', { inputValue: resource.name })
+    const description = await ElMessageBox.prompt('修改资料说明', '资料说明', { inputValue: resource.description || '' })
+    await teachingContentApi.update(selected.value.id, resource.id, name.value, description.value)
+    await loadDetails(selected.value.id)
+  } catch (error) { if (!isDialogDismissal(error)) ElMessage.error(error instanceof Error ? error.message : '修改失败') }
 }
 
 async function downloadResource(resource: CourseResource) {
@@ -247,31 +267,11 @@ async function downloadResource(resource: CourseResource) {
 async function deleteResource(resource: CourseResource) {
   if (!selected.value) return
   try {
-    await ElMessageBox.confirm(`确定撤下“${resource.name}”吗？现有对象保留以便审计。`, '撤下资源', { type: 'warning' })
+    await ElMessageBox.confirm(`确定删除“${resource.name}”及其原件和知识索引吗？此操作不可撤销。`, '删除资料', { type: 'warning' })
     await courseApi.deleteResource(selected.value.id, resource.id)
-    resources.value = resources.value.filter((item) => item.id !== resource.id)
-    ElMessage.success('资源已撤下')
+    await loadDetails(selected.value.id)
+    ElMessage.success('资料和关联索引已删除')
   } catch (error) { if (!isDialogDismissal(error)) ElMessage.error(error instanceof Error ? error.message : '撤下失败') }
-}
-
-async function uploadDocument(files: FileList | null) {
-  const file = files?.item(0)
-  if (!selected.value || !file) return
-  const targetCourseId = selected.value.id
-  documentUploading.value = true
-  try {
-    const result = await courseApi.uploadDocument(targetCourseId, file)
-    if (!componentMounted || courseId.value !== targetCourseId) return
-    const index = documents.value.findIndex((item) => item.id === result.document.id)
-    if (index >= 0) documents.value[index] = result.document
-    else documents.value.unshift(result.document)
-    if (result.job) {
-      documentJobs[result.document.id] = result.job
-      void monitorDocumentJob(result.document.id, result.job.id, targetCourseId, detailGeneration)
-    }
-    ElMessage.success(result.duplicate ? '相同文档已存在，已复用摄取任务' : '文档已上传并进入摄取队列')
-  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '文档上传失败') }
-  finally { documentUploading.value = false }
 }
 
 async function reindexDocument(document: KnowledgeDocument) {
@@ -350,16 +350,10 @@ function isDialogDismissal(error: unknown): boolean {
 async function deleteDocument(document: KnowledgeDocument) {
   if (!selected.value) return
   try {
-    await ElMessageBox.confirm(`确定删除“${document.name}”及其向量索引吗？`, '删除知识文档', { type: 'warning' })
+    await ElMessageBox.confirm(`将“${document.name}”移出 AI 知识库吗？资料原件仍可下载。`, '移出知识库', { type: 'warning' })
     await courseApi.deleteDocument(selected.value.id, document.id)
     documents.value = documents.value.filter((item) => item.id !== document.id)
   } catch (error) { if (!isDialogDismissal(error)) ElMessage.error(error instanceof Error ? error.message : '删除失败') }
-}
-
-async function downloadDocument(document: KnowledgeDocument) {
-  if (!selected.value) return
-  try { await courseApi.downloadDocument(selected.value.id, document) }
-  catch (error) { ElMessage.error(error instanceof Error ? error.message : '下载失败') }
 }
 
 function formatBytes(bytes: number): string {
@@ -369,22 +363,38 @@ function formatBytes(bytes: number): string {
 }
 
 async function createChapter() {
-  if (!selected.value || !chapterForm.title.trim()) return
+  if (!selected.value || !chapterForm.title.trim() || chapterSaving.value) return
+  const targetCourseId = selected.value.id
+  const pendingFiles = [...chapterFiles.value]
+  const stillCurrent = () => componentMounted && courseId.value === targetCourseId
+  chapterSaving.value = true
   try {
     const value = editingChapterId.value
-      ? await courseApi.updateChapter(selected.value.id, editingChapterId.value, { ...chapterForm })
-      : await courseApi.createChapter(selected.value.id, { ...chapterForm })
+      ? await courseApi.updateChapter(targetCourseId, editingChapterId.value, { ...chapterForm })
+      : await courseApi.createChapter(targetCourseId, { ...chapterForm })
+    if (!stillCurrent()) return
     const index = chapters.value.findIndex((item) => item.id === value.id)
     if (index >= 0) chapters.value[index] = value
     else chapters.value.push(value)
     chapters.value.sort((a, b) => a.sortOrder - b.sortOrder)
+    editingChapterId.value = value.id
+    selectedChapterId.value = value.id
+    for (const item of pendingFiles) {
+      await courseApi.uploadResource(targetCourseId, item.file, value.id, item.include)
+      if (!stillCurrent()) return
+      chapterFiles.value.shift()
+    }
+    await loadDetails(targetCourseId)
+    if (!stillCurrent()) return
     chapterVisible.value = false
     editingChapterId.value = null
     Object.assign(chapterForm, { title: '', description: '', sortOrder: chapters.value.length + 1, parentId: undefined })
-  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '章节创建失败') }
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '章节保存或资料上传失败；已保存内容保留，可重试剩余文件') }
+  finally { chapterSaving.value = false }
 }
 
 function editChapter(chapter: CourseChapter) {
+  chapterFiles.value = []
   editingChapterId.value = chapter.id
   Object.assign(chapterForm, { title: chapter.title, description: chapter.description || '', sortOrder: chapter.sortOrder, parentId: chapter.parentId || undefined })
   chapterVisible.value = true
@@ -648,36 +658,24 @@ onBeforeUnmount(() => {
             <EmptyState v-else title="暂无课程公告" description="教师或助教发布公告后，所有课程成员都能在这里看到。" />
             <el-pagination v-if="announcementTotal > announcementPageSize" v-model:current-page="announcementPage" class="member-pagination" background layout="prev, pager, next" :page-size="announcementPageSize" :total="announcementTotal" @current-change="loadAnnouncements" />
           </el-tab-pane>
-          <el-tab-pane label="课程资源" name="resources">
-            <div class="tab-toolbar"><p>原始课程资料可直接上传和下载，不依赖 AI 摄取。</p><div class="button-row"><el-button @click="loadDetails(selected.id)">刷新</el-button><template v-if="canManageSelected"><label class="upload-button" :class="{ disabled: resourceUploading }"><input type="file" :disabled="resourceUploading" @change="uploadResource(($event.target as HTMLInputElement).files)" />{{ resourceUploading ? '上传中…' : '上传课程资料' }}</label><el-button @click="resourceVisible = true">登记外部对象</el-button><label class="upload-button" :class="{ disabled: documentUploading }"><input type="file" accept=".pdf,.ppt,.pptx,.docx,.md,.txt" :disabled="documentUploading" @change="uploadDocument(($event.target as HTMLInputElement).files)" />{{ documentUploading ? '上传中…' : '上传知识文档' }}</label></template></div></div>
-            <el-alert v-if="documentLoadError" :title="documentLoadError" type="error" :closable="false" show-icon />
-            <el-table v-else-if="documents.length" :data="documents" class="document-table">
-              <el-table-column prop="name" label="知识文档" min-width="200" />
-              <el-table-column label="大小" width="100"><template #default="scope">{{ formatBytes(scope.row.sizeBytes) }}</template></el-table-column>
-              <el-table-column label="摄取状态" width="130"><template #default="scope"><StatusBadge :status="documentTaskStatus(scope.row)" /></template></el-table-column>
-              <el-table-column label="状态说明" min-width="180" show-overflow-tooltip><template #default="scope">{{ documentTaskError(scope.row) }}</template></el-table-column>
-              <el-table-column label="操作" width="270"><template #default="scope"><el-button link @click="downloadDocument(scope.row)">下载</el-button><template v-if="canManageSelected"><el-button v-if="isDocumentJobCancelling(scope.row)" link disabled>取消中…</el-button><el-button v-else-if="mayCancelDocumentJob(scope.row)" link type="warning" @click="cancelDocumentJob(scope.row)">取消任务</el-button><el-button link @click="reindexDocument(scope.row)">重建索引</el-button><el-button link type="danger" @click="deleteDocument(scope.row)">删除</el-button></template></template></el-table-column>
-            </el-table>
-            <EmptyState v-else title="暂无知识文档" description="上传 PDF、PPT/PPTX、Word、Markdown 或 TXT，完成后即可用于课程问答。" />
-            <h3 class="resource-heading">课程原始资料与外部对象</h3>
-            <el-table v-if="resources.length" :data="resources">
-              <el-table-column prop="name" label="名称" min-width="180" />
-              <el-table-column prop="resourceType" label="类型" width="120" />
-              <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
-              <el-table-column prop="objectKey" label="外部对象标识" min-width="220" show-overflow-tooltip />
-              <el-table-column label="操作" width="130"><template #default="scope"><el-button link @click="downloadResource(scope.row)">下载</el-button><el-button v-if="canManageSelected" link type="danger" @click="deleteResource(scope.row)">撤下</el-button></template></el-table-column>
-            </el-table>
-            <p v-else class="muted">暂无课程原始资料。</p>
-          </el-tab-pane>
           <el-tab-pane label="章节" name="chapters">
-            <div class="tab-toolbar"><p>章节用于组织资源、知识点和问答引用。</p><el-button v-if="canManageSelected" @click="chapterVisible = true">添加章节</el-button></div>
-            <el-timeline v-if="chapters.length"><el-timeline-item v-for="chapter in chapters" :key="chapter.id" :timestamp="`排序 ${chapter.sortOrder}`"><strong>{{ chapter.title }}</strong><p class="muted">{{ chapter.description }}</p><div v-if="canManageSelected"><el-button link @click="editChapter(chapter)">编辑</el-button><el-button link type="danger" @click="deleteChapter(chapter)">删除</el-button></div></el-timeline-item></el-timeline>
-            <EmptyState v-else title="暂无章节" />
+            <div class="tab-toolbar"><p>按章节组织教学资料、AI 知识库与知识点。</p><el-button v-if="canManageSelected" @click="editingChapterId = null; chapterFiles = []; chapterForm.title = ''; chapterForm.description = ''; chapterVisible = true">添加章节</el-button></div>
+            <el-select v-if="chapters.length" v-model="selectedChapterId" aria-label="当前章节"><el-option v-for="chapter in chapters" :key="chapter.id" :label="chapter.title" :value="chapter.id" /></el-select>
+            <section v-if="selectedChapter">
+              <h3>{{ selectedChapter.title }}</h3><SafeMarkdown :content="selectedChapter.description || ''" />
+              <div v-if="canManageSelected"><el-button link @click="editChapter(selectedChapter)">编辑章节</el-button><el-button link type="danger" @click="deleteChapter(selectedChapter)">删除章节</el-button></div>
+              <h3>章节资料</h3><div v-if="canManageSelected" class="tab-toolbar"><el-checkbox v-model="includeChapterUploads">支持的文档默认加入 AI 知识库</el-checkbox><label class="upload-button"><input type="file" multiple :disabled="resourceUploading" @change="uploadResource(($event.target as HTMLInputElement).files, selectedChapterId)" />上传章节资料</label></div>
+              <el-alert v-if="documentLoadError" :title="documentLoadError" type="error" :closable="false" />
+              <TeachingResourceList :resources="resources.filter(r => r.chapterId === selectedChapterId)" :documents="documents" :manage="canManageSelected" :status="documentTaskStatus" :error="documentTaskError" :cancelable="mayCancelDocumentJob" :cancelling="isDocumentJobCancelling" :format-bytes="formatBytes" @download="downloadResource" @remove="deleteResource" @edit="editResource" @include="includeResource" @exclude="deleteDocument" @reindex="reindexDocument" @cancel="cancelDocumentJob" />
+              <h3>知识点</h3><template v-if="canManageSelected"><el-button @click="editingPointId = null; pointForm.title = ''; pointForm.description = ''; pointForm.chapterId = selectedChapterId; pointVisible = true">添加知识点</el-button><KnowledgePointDraftEditor :course-id="selected.id" :chapter-id="selectedChapterId" @confirmed="loadDetails(selected.id)" /></template>
+              <article v-for="point in knowledgePoints.filter(p => p.chapterId === selectedChapterId)" :key="point.id"><h4>{{ point.title }} <small>{{ point.importance }}</small></h4><p>{{ point.description }}</p><details v-if="pointSources(point).length"><summary>来源引用</summary><blockquote v-for="source in pointSources(point)" :key="source.id">{{ source.name }} · {{ source.page ? '第 ' + source.page + ' 页' : source.section }}<p>{{ source.quote }}</p></blockquote></details><template v-if="canManageSelected"><el-button link @click="editPoint(point)">编辑知识点</el-button><el-button link type="danger" @click="deletePoint(point)">删除知识点</el-button></template></article>
+            </section><EmptyState v-else title="暂无章节" />
           </el-tab-pane>
-          <el-tab-pane label="知识点" name="knowledge">
-            <div class="tab-toolbar"><p>知识点将用于作业关联和教学分析。</p><el-button v-if="canManageSelected" @click="pointVisible = true">添加知识点</el-button></div>
-            <div v-if="knowledgePoints.length" class="tag-cloud"><span v-for="point in knowledgePoints" :key="point.id"><el-tag effect="plain" size="large">{{ point.title }}</el-tag><template v-if="canManageSelected"><el-button link @click="editPoint(point)">编辑</el-button><el-button link type="danger" @click="deletePoint(point)">删除</el-button></template></span></div>
-            <EmptyState v-else title="暂无知识点" />
+          <el-tab-pane label="参考资料" name="resources">
+            <div class="tab-toolbar"><p>课程级文件、模板、数据集与外部链接；默认不加入 AI 知识库。</p><div class="button-row"><el-button @click="loadDetails(selected.id)">刷新</el-button><template v-if="canManageSelected"><label class="upload-button"><input type="file" multiple :disabled="resourceUploading" @change="uploadResource(($event.target as HTMLInputElement).files)" />上传参考资料</label><el-button @click="resourceVisible = true">添加外部链接</el-button></template></div></div>
+            <el-alert v-if="documentLoadError" :title="documentLoadError" type="error" :closable="false" />
+            <TeachingResourceList :resources="resources.filter(r => !r.chapterId)" :documents="documents" :manage="canManageSelected" :status="documentTaskStatus" :error="documentTaskError" :cancelable="mayCancelDocumentJob" :cancelling="isDocumentJobCancelling" :format-bytes="formatBytes" @download="downloadResource" @remove="deleteResource" @edit="editResource" @include="includeResource" @exclude="deleteDocument" @reindex="reindexDocument" @cancel="cancelDocumentJob" />
+            <h3 v-if="knowledgePoints.some(p => !p.chapterId)">课程通用知识点</h3><article v-for="point in knowledgePoints.filter(p => !p.chapterId)" :key="point.id">{{ point.title }}<template v-if="canManageSelected"><el-button link @click="editPoint(point)">编辑知识点</el-button><el-button link type="danger" @click="deletePoint(point)">删除知识点</el-button></template></article>
           </el-tab-pane>
           <el-tab-pane v-if="canManageSelected" label="教学管理" name="teaching">
             <section class="management-section">
@@ -741,12 +739,11 @@ onBeforeUnmount(() => {
       </el-form>
       <template #footer><el-button @click="editVisible = false">取消</el-button><el-button type="primary" @click="saveCourseEdit">保存</el-button></template>
     </el-dialog>
-    <el-dialog v-model="resourceVisible" title="登记外部对象元数据" width="min(560px, 94vw)">
-      <el-alert title="此操作只登记一个已存在的外部对象标识，不会上传文件，也不会验证对象是否存在。普通课程资料请使用“上传知识文档”。" type="warning" :closable="false" show-icon />
-      <el-form label-position="top" class="dialog-form"><div class="form-grid"><el-form-item label="显示名称"><el-input v-model="resourceForm.name" /></el-form-item><el-form-item label="外部引用类型"><el-select v-model="resourceForm.resourceType"><el-option label="链接引用" value="LINK" /><el-option label="视频引用" value="VIDEO" /><el-option label="其他外部对象" value="OTHER" /></el-select></el-form-item></div><el-form-item label="外部对象标识（非上传地址）"><el-input v-model="resourceForm.objectKey" :placeholder="selected ? `courses/${selected.id}/external/...` : 'courses/{courseId}/external/...'" /></el-form-item><el-form-item label="说明"><el-input v-model="resourceForm.description" type="textarea" /></el-form-item><el-form-item label="章节"><el-select v-model="resourceForm.chapterId" clearable><el-option v-for="chapter in chapters" :key="chapter.id" :label="chapter.title" :value="chapter.id" /></el-select></el-form-item></el-form>
-      <template #footer><el-button @click="resourceVisible = false">取消</el-button><el-button type="primary" @click="createResource">仅登记元数据</el-button></template>
+    <el-dialog v-model="resourceVisible" title="添加参考链接" width="min(560px, 94vw)">
+      <el-form label-position="top"><el-form-item label="显示名称"><el-input v-model="resourceForm.name" /></el-form-item><el-form-item label="HTTP(S) 链接"><el-input v-model="resourceForm.objectKey" placeholder="https://..." /></el-form-item><el-form-item label="说明"><el-input v-model="resourceForm.description" type="textarea" /></el-form-item></el-form>
+      <template #footer><el-button @click="resourceVisible = false">取消</el-button><el-button type="primary" @click="createResource">保存链接</el-button></template>
     </el-dialog>
-    <el-dialog v-model="chapterVisible" :title="editingChapterId ? '编辑章节' : '添加章节'" width="min(480px, 94vw)"><el-form label-position="top"><el-form-item label="章节名称"><el-input v-model="chapterForm.title" /></el-form-item><el-form-item label="顺序"><el-input-number v-model="chapterForm.sortOrder" :min="1" /></el-form-item><el-form-item label="说明"><el-input v-model="chapterForm.description" type="textarea" /></el-form-item></el-form><template #footer><el-button type="primary" @click="createChapter">保存</el-button></template></el-dialog>
+    <el-dialog v-model="chapterVisible" :title="editingChapterId ? '编辑章节' : '添加章节'" width="min(480px, 94vw)"><el-form label-position="top"><el-form-item label="章节名称"><el-input v-model="chapterForm.title" /></el-form-item><el-form-item label="顺序"><el-input-number v-model="chapterForm.sortOrder" :min="1" /></el-form-item><el-form-item label="教学说明（Markdown）"><el-input v-model="chapterForm.description" type="textarea" /></el-form-item><label>教学资料（可多选）<input type="file" multiple :disabled="chapterSaving" @change="chooseChapterFiles(($event.target as HTMLInputElement).files)" /></label><div v-for="item in chapterFiles" :key="item.file.name">{{ item.file.name }} <el-checkbox v-model="item.include" :disabled="!supportsRag(item.file.name) || chapterSaving">加入 AI 知识库</el-checkbox></div></el-form><template #footer><el-button type="primary" :loading="chapterSaving" @click="createChapter">保存</el-button></template></el-dialog>
     <el-dialog v-model="pointVisible" :title="editingPointId ? '编辑知识点' : '添加知识点'" width="min(480px, 94vw)"><el-form label-position="top"><el-form-item label="知识点名称"><el-input v-model="pointForm.title" /></el-form-item><el-form-item label="关联章节"><el-select v-model="pointForm.chapterId" clearable><el-option v-for="chapter in chapters" :key="chapter.id" :label="chapter.title" :value="chapter.id" /></el-select></el-form-item><el-form-item label="顺序"><el-input-number v-model="pointForm.sortOrder" :min="1" /></el-form-item><el-form-item label="说明"><el-input v-model="pointForm.description" type="textarea" /></el-form-item></el-form><template #footer><el-button type="primary" @click="createPoint">保存</el-button></template></el-dialog>
     <el-dialog v-model="classVisible" :title="editingClassId ? '修改教学班' : '创建教学班'" width="min(520px, 94vw)">
       <el-form label-position="top"><div class="form-grid"><el-form-item label="教学班代码"><el-input :model-value="editingClassId ? classForm.code : '创建后由系统生成'" disabled /></el-form-item><el-form-item label="教学班名称"><el-input v-model="classForm.name" placeholder="软件工程 1 班" /></el-form-item></div><div class="form-grid"><el-form-item label="容量（可选）"><el-input-number v-model="classForm.capacity" :min="1" :max="10000" controls-position="right" style="width:100%" /></el-form-item><el-form-item label="主教学班"><el-switch v-model="classForm.primaryClass" active-text="是" inactive-text="否" /></el-form-item></div></el-form>

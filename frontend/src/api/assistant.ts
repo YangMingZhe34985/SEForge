@@ -1,6 +1,16 @@
 import { apiRequest } from './client'
 import type { ChatMessage, Conversation, PageResult } from '@/types/domain'
 
+export interface GenerationStatus {
+  requestId: string
+  status: 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+  question: string
+  traceId: string
+  assistantMessageId?: string
+  errorCode?: string
+  errorMessage?: string
+}
+
 function requestMessagePage(courseId: string, conversationId: string, page: number, size: number) {
   return apiRequest<PageResult<ChatMessage>>({
     url: `/courses/${courseId}/conversations/${conversationId}/messages`,
@@ -9,6 +19,8 @@ function requestMessagePage(courseId: string, conversationId: string, page: numb
 }
 
 export const assistantApi = {
+  generation: (courseId: string, conversationId: string) =>
+    apiRequest<GenerationStatus | null>({ url: `/courses/${courseId}/conversations/${conversationId}/generation` }),
   conversations: (courseId: string) =>
     apiRequest<PageResult<Conversation>>({ url: `/courses/${courseId}/conversations`, params: { page: 0, size: 100 } }),
   createConversation: (courseId: string, title?: string) =>
@@ -46,6 +58,8 @@ export const assistantApi = {
       url: `/courses/${courseId}/conversations/${conversationId}/requests/${requestId}`,
       method: 'DELETE',
     }),
+  renameConversation: (courseId: string, conversationId: string, title: string) =>
+    apiRequest<Conversation>({ url: `/courses/${courseId}/conversations/${conversationId}`, method: 'PUT', data: { title } }),
   deleteConversation: (courseId: string, conversationId: string) =>
     apiRequest<void>({ url: `/courses/${courseId}/conversations/${conversationId}`, method: 'DELETE' }),
 }

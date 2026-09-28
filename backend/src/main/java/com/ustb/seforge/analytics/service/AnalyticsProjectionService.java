@@ -105,8 +105,8 @@ public class AnalyticsProjectionService {
                 if (Objects.equals(first,id)) add(result,nullable(eligible.getFirst(),"class_id"),"completed","",BigDecimal.ONE);
             }
             case "grade" -> {
-                if (!"CONFIRMED".equals(str(row,"status"))) break;
-                var values=jdbc.queryForList("SELECT s.class_id,r.total_score FROM submission s JOIN rubric r ON r.assignment_id=s.assignment_id WHERE s.id=? AND s.course_id=?",num(row,"submission_id"),course);
+                if (!java.util.Set.of("CONFIRMED","PUBLISHED").contains(str(row,"status"))) break;
+                var values=jdbc.queryForList("SELECT s.class_id,COALESCE((SELECT SUM(q.max_score) FROM assignment_question q WHERE q.assignment_id=s.assignment_id AND q.course_id=s.course_id),r.total_score) total_score FROM submission s LEFT JOIN rubric r ON r.assignment_id=s.assignment_id WHERE s.id=? AND s.course_id=?",num(row,"submission_id"),course);
                 if (values.isEmpty()) break; var value=values.getFirst();
                 BigDecimal score=ratio(decimal(row,"final_score"),decimal(value,"total_score"));
                 Long scope=nullable(value,"class_id"); add(result,scope,"gradeCount","",BigDecimal.ONE); add(result,scope,"gradeSum","",score);
@@ -114,8 +114,10 @@ public class AnalyticsProjectionService {
                 add(result,scope,"bucket",bucket,BigDecimal.ONE);
             }
             case "feedback" -> {
-                if (row.get("final_score")==null || row.get("rubric_item_id")==null) break;
-                var values=jdbc.queryForList("SELECT s.class_id,kp.id,kp.title,ri.max_score FROM grade g JOIN submission s ON s.id=g.submission_id JOIN rubric_item ri ON ri.id=? JOIN assignment_question q ON q.id=ri.question_id AND q.assignment_id=s.assignment_id JOIN knowledge_points kp ON kp.id=q.knowledge_point_id AND kp.course_id=g.course_id WHERE g.id=? AND g.course_id=? AND g.status='CONFIRMED'",num(row,"rubric_item_id"),num(row,"grade_id"),course);
+                if (row.get("final_score")==null || (row.get("rubric_item_id")==null && row.get("question_id")==null)) break;
+                var values=row.get("rubric_item_id") != null
+                        ? jdbc.queryForList("SELECT s.class_id,kp.id,kp.title,ri.max_score FROM grade g JOIN submission s ON s.id=g.submission_id JOIN rubric_item ri ON ri.id=? JOIN assignment_question q ON q.id=ri.question_id AND q.assignment_id=s.assignment_id JOIN knowledge_points kp ON kp.id=q.knowledge_point_id AND kp.course_id=g.course_id WHERE g.id=? AND g.course_id=? AND g.status IN ('CONFIRMED','PUBLISHED')",num(row,"rubric_item_id"),num(row,"grade_id"),course)
+                        : jdbc.queryForList("SELECT s.class_id,kp.id,kp.title,q.max_score-COALESCE((SELECT SUM(i.max_score) FROM rubric_item i WHERE i.question_id=q.id),0) max_score FROM grade g JOIN submission s ON s.id=g.submission_id JOIN assignment_question q ON q.id=? AND q.assignment_id=s.assignment_id JOIN knowledge_points kp ON kp.id=q.knowledge_point_id AND kp.course_id=g.course_id WHERE g.id=? AND g.course_id=? AND g.status IN ('CONFIRMED','PUBLISHED')",num(row,"question_id"),num(row,"grade_id"),course);
                 if (values.isEmpty()) break; var value=values.getFirst(); String key=num(value,"id")+"|"+str(value,"title"); Long scope=nullable(value,"class_id");
                 add(result,scope,"kpEarned",key,decimal(row,"final_score")); add(result,scope,"kpPossible",key,decimal(value,"max_score")); add(result,scope,"kpCount",key,BigDecimal.ONE);
             }

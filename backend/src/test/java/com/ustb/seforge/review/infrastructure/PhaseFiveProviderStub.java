@@ -15,6 +15,8 @@ final class PhaseFiveProviderStub implements AutoCloseable {
     volatile String override;
     volatile long delayMillis;
     final AtomicInteger calls = new AtomicInteger();
+    final AtomicInteger imageCalls = new AtomicInteger();
+    volatile com.fasterxml.jackson.databind.JsonNode lastAssignment;
 
     PhaseFiveProviderStub() {
         try {
@@ -27,7 +29,10 @@ final class PhaseFiveProviderStub implements AutoCloseable {
                 String answer = override;
                 if (answer == null) {
                     Object result;
-                    if (content.contains("Static-analysis source:")) {
+                    if (messages.path(messages.size()-1).path("content").isArray()) {
+                        imageCalls.incrementAndGet();
+                        result = "Visible diagram: Controller -> Service -> Repository. Auxiliary image interpretation; arrows may be ambiguous.";
+                    } else if (content.contains("Static-analysis source:")) {
                         var findings = json.readTree(content.substring(content.indexOf("Findings:\n") + 10));
                         List<Object> explanations = new ArrayList<>();
                         findings.forEach(f -> explanations.add(Map.of("findingKey", f.path("findingKey").asText(),
@@ -35,6 +40,7 @@ final class PhaseFiveProviderStub implements AutoCloseable {
                         result = Map.of("summary", "Static findings explained", "explanations", explanations);
                     } else if (content.startsWith("{")) {
                         var material = json.readTree(content);
+                        lastAssignment=material;
                         List<Object> items = new ArrayList<>();
                         material.path("rubric").path("items").forEach(i -> items.add(Map.of("rubricItemId", i.path("id").asLong(),
                                 "suggestedScore", 4, "evidence", List.of("Submission answer evidence"), "issues", List.of(), "feedback", "Improve the explanation")));
@@ -44,7 +50,7 @@ final class PhaseFiveProviderStub implements AutoCloseable {
                                 .map(name -> Map.of("dimension", name, "score", 80, "findings", List.of("Section evidence"), "suggestions", List.of("Clarify section"))).toList(),
                                 "issues", List.of(), "recommendations", List.of("Add acceptance criteria"));
                     }
-                    answer = json.writeValueAsString(result);
+                    answer = result instanceof String text ? text : json.writeValueAsString(result);
                 }
                 long delay = delayMillis;
                 if (delay > 0) try { Thread.sleep(delay); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }

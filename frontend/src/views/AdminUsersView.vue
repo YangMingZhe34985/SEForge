@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import PageHeader from '@/components/PageHeader.vue'
+import AdminPageHeader from '@/components/AdminPageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { adminApi, type AdminUserMembership, type UserImportPreview, type UserImportResult } from '@/api/admin'
 import { courseApi } from '@/api/courses'
@@ -34,6 +34,10 @@ const courseSearch = ref('')
 const courseStatus = ref<'' | 'ACTIVE' | 'ARCHIVED'>('')
 const courseSemesterId = ref('')
 const loading = ref(false)
+const errorMessage = ref('')
+const savingUser = ref(false)
+const savingSemester = ref(false)
+const savingCourse = ref(false)
 const createVisible = ref(false)
 const semesterVisible = ref(false)
 const editingSemesterId = ref<string | null>(null)
@@ -57,6 +61,7 @@ function validateUsername() {
 
 async function load() {
   loading.value = true
+  errorMessage.value = ''
   try {
     const [userResult, semesterList, courseResult] = await Promise.all([
       adminApi.users(userPage.value - 1, 20, userType.value || undefined, userSearch.value.trim() || undefined),
@@ -72,7 +77,7 @@ async function load() {
     semesters.value = semesterList
     courses.value = courseResult.items
     courseTotal.value = courseResult.total
-  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '管理数据加载失败') }
+  } catch (error) { errorMessage.value = error instanceof Error ? error.message : '管理数据加载失败' }
   finally { loading.value = false }
 }
 
@@ -97,11 +102,13 @@ async function loadUsers() {
 }
 
 async function createUser() {
+  if (savingUser.value) return
   userErrors.value = {}
   validateUsername()
   if (userErrors.value.username) return
   if (!form.email || !form.username || !form.displayName || form.password.length < 10) return ElMessage.warning('请完整填写账号信息，密码至少 10 位')
   if (form.accountType === 'STUDENT' && !/^[A-Za-z0-9_-]{3,64}$/.test(form.studentNo.trim())) return ElMessage.warning('请输入有效且唯一的学号')
+  savingUser.value = true
   try {
     await adminApi.createUser({
       email: form.email,
@@ -120,7 +127,7 @@ async function createUser() {
   } catch (error) {
     if (error instanceof ApiError) userErrors.value = fieldErrors(error.details)
     ElMessage.error(error instanceof Error ? error.message : '创建失败')
-  }
+  } finally { savingUser.value = false }
 }
 
 async function previewCsv(files: FileList | null) {
@@ -170,10 +177,12 @@ function downloadImportResult() {
 }
 
 async function createSemester() {
+  if (savingSemester.value) return
   if (!semesterForm.name.trim() || !semesterForm.startsOn || !semesterForm.endsOn) {
     return ElMessage.warning('请完整填写学期信息')
   }
   if (semesterForm.endsOn <= semesterForm.startsOn) return ElMessage.warning('结束日期必须晚于开始日期')
+  savingSemester.value = true
   try {
     const wasEditing = Boolean(editingSemesterId.value)
     const semester = editingSemesterId.value
@@ -188,11 +197,18 @@ async function createSemester() {
     Object.assign(semesterForm, { code: '', name: '', startsOn: '', endsOn: '', status: 'PLANNED' })
     ElMessage.success(wasEditing ? '学期已更新' : '学期已创建，现在可以创建课程')
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '学期创建失败') }
+  finally { savingSemester.value = false }
 }
 
 function editSemester(semester: Semester) {
   editingSemesterId.value = semester.id
   Object.assign(semesterForm, { code: semester.code, name: semester.name, startsOn: semester.startsOn, endsOn: semester.endsOn, status: semester.status })
+  semesterVisible.value = true
+}
+
+function newSemester() {
+  editingSemesterId.value = null
+  Object.assign(semesterForm, { code: '', name: '', startsOn: '', endsOn: '', status: 'PLANNED' })
   semesterVisible.value = true
 }
 
@@ -263,7 +279,9 @@ function openCourseEdit(course: CourseSummary) {
 }
 
 async function saveCourseEdit() {
+  if (savingCourse.value) return
   if (!courseForm.name.trim()) return ElMessage.warning('请填写课程名称')
+  savingCourse.value = true
   try {
     const updated = await adminApi.updateCourse(courseForm.id, {
       name: courseForm.name.trim(),
@@ -275,6 +293,7 @@ async function saveCourseEdit() {
     courseEditVisible.value = false
     ElMessage.success('课程已更新')
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '课程更新失败') }
+  finally { savingCourse.value = false }
 }
 
 async function toggleCourseArchive(course: CourseSummary) {
@@ -311,21 +330,22 @@ onMounted(load)
 
 <template>
   <div>
-    <PageHeader title="平台管理" description="先建立学期，再创建教师账号和课程；所有管理操作均由服务端审计。">
-      <div class="button-row"><el-button @click="semesterVisible = true">创建学期</el-button><el-button type="primary" @click="createVisible = true">创建账号</el-button></div>
-    </PageHeader>
+    <AdminPageHeader title="平台管理" kind="users" description="学期、用户与课程集中管理，让教学更专注。">
+      <el-button @click="newSemester">创建学期</el-button><el-button type="primary" @click="createVisible = true">创建账号</el-button>
+    </AdminPageHeader>
+    <el-alert v-if="errorMessage" class="admin-error" type="error" :closable="false" :title="errorMessage" show-icon><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
     <el-tabs v-model="activeSection" class="admin-tabs">
     <el-tab-pane label="账号管理" name="users">
     <section class="panel" v-loading="loading">
-      <div class="section-heading"><div><h2>用户</h2><p class="muted">学生可自助注册；教师与管理员账号由管理员创建。</p></div><div class="button-row"><el-input v-model="userSearch" placeholder="姓名、账号、学号或邮箱" clearable @keyup.enter="userPage = 1; loadUsers()" /><el-select v-model="userType" style="width:125px" @change="userPage = 1; loadUsers()"><el-option label="全部" value="" /><el-option label="教师" value="TEACHER" /><el-option label="学生" value="STUDENT" /></el-select><el-button @click="userPage = 1; loadUsers()">搜索</el-button><label class="import-button">导入 CSV<input type="file" accept=".csv,text/csv" @change="previewCsv(($event.target as HTMLInputElement).files); ($event.target as HTMLInputElement).value = ''" /></label></div></div>
+      <div class="section-heading"><div><h2>用户</h2><p class="muted">学生可自助注册；教师与管理员账号由管理员创建。</p></div><div class="button-row"><el-input v-model="userSearch" placeholder="姓名、账号、学号或邮箱" clearable @keyup.enter="userPage = 1; loadUsers()" /><el-select v-model="userType" aria-label="账号类型筛选" placeholder="全部账号类型" class="account-type-filter" @change="userPage = 1; loadUsers()"><el-option label="全部" value="" /><el-option label="教师" value="TEACHER" /><el-option label="学生" value="STUDENT" /></el-select><el-button @click="userPage = 1; loadUsers()">搜索</el-button><label class="import-button">导入 CSV<input type="file" aria-label="导入账号 CSV" accept=".csv,text/csv" @change="previewCsv(($event.target as HTMLInputElement).files); ($event.target as HTMLInputElement).value = ''" /></label></div></div>
       <el-table v-if="users.length" :data="users" stripe><el-table-column prop="displayName" label="姓名" min-width="130" /><el-table-column prop="username" label="用户名" min-width="130" /><el-table-column prop="studentNo" label="学号" min-width="130"><template #default="scope">{{ scope.row.accountType === 'STUDENT' ? (scope.row.studentNo || '待补录') : '—' }}</template></el-table-column><el-table-column prop="email" label="邮箱" min-width="210" /><el-table-column prop="accountType" label="账号类型" width="120" /><el-table-column label="角色" min-width="150"><template #default="scope"><el-tag v-for="role in scope.row.roles" :key="role" size="small" effect="plain">{{ role }}</el-tag></template></el-table-column><el-table-column label="状态" width="100"><template #default="scope"><el-tag :type="scope.row.enabled ? 'success' : 'danger'">{{ scope.row.enabled ? '启用' : '停用' }}</el-tag></template></el-table-column><el-table-column label="操作" width="280"><template #default="scope"><el-button link type="primary" @click="openUser(scope.row)">查看</el-button><el-button link type="primary" @click="toggleAdmin(scope.row)">{{ scope.row.roles.includes('ADMIN') ? '移除管理员' : '授予管理员' }}</el-button><el-button link :type="scope.row.enabled ? 'danger' : 'primary'" @click="toggleEnabled(scope.row)">{{ scope.row.enabled ? '停用' : '启用' }}</el-button></template></el-table-column></el-table>
-      <EmptyState v-else title="暂无用户" />
-      <el-pagination v-if="userTotal > 20" v-model:current-page="userPage" background layout="prev, pager, next" :page-size="20" :total="userTotal" @current-change="loadUsers" />
+      <EmptyState v-else-if="!loading && !errorMessage" title="暂无用户" description="调整搜索条件，或创建新的平台账号。" />
+      <p v-if="userTotal > 0" class="record-count">共 {{ userTotal }} 条账号记录</p><el-pagination v-if="userTotal > 0" v-model:current-page="userPage" background layout="prev, pager, next" :page-size="20" :total="userTotal" @current-change="loadUsers" />
     </section>
     </el-tab-pane>
     <el-tab-pane label="学期管理" name="semesters">
     <section class="panel semester-panel" v-loading="loading">
-      <div class="section-heading"><div><h2>学期</h2><p class="muted">课程必须归属一个已登记的学期。</p></div><el-button @click="semesterVisible = true">新建学期</el-button></div>
+      <div class="section-heading"><div><h2>学期管理</h2><p class="muted">课程必须归属一个已登记的学期。</p></div><el-button type="primary" @click="newSemester">新建学期</el-button></div>
       <el-table v-if="semesters.length" :data="semesters" stripe>
         <el-table-column prop="code" label="代码" min-width="120" />
         <el-table-column prop="name" label="名称" min-width="180" />
@@ -334,12 +354,12 @@ onMounted(load)
         <el-table-column label="状态" width="110"><template #default="scope"><el-tag effect="plain">{{ scope.row.status }}</el-tag></template></el-table-column>
         <el-table-column label="操作" width="90"><template #default="scope"><el-button link @click="editSemester(scope.row)">修改</el-button></template></el-table-column>
       </el-table>
-      <EmptyState v-else title="暂无学期" description="请先创建学期，教师才能创建课程。" />
+      <EmptyState v-else-if="!loading && !errorMessage" title="暂无学期" description="请先创建学期，教师才能创建课程。"><el-button type="primary" @click="newSemester">创建第一个学期</el-button></EmptyState>
     </section>
     </el-tab-pane>
     <el-tab-pane label="全局课程" name="courses">
     <section class="panel audit-panel" v-loading="loading">
-      <div class="section-heading"><div><h2>全局课程治理</h2><p class="muted">按学期、状态和名称检索课程，治理负责人与归档状态。</p></div><div class="button-row"><el-input v-model="courseSearch" placeholder="课程名称或代码" clearable @keyup.enter="coursePage = 1; loadCourses()" /><el-select v-model="courseSemesterId" clearable placeholder="学期" style="width:135px" @change="coursePage = 1; loadCourses()"><el-option v-for="item in semesters" :key="item.id" :label="item.name" :value="item.id" /></el-select><el-select v-model="courseStatus" style="width:105px" @change="coursePage = 1; loadCourses()"><el-option label="全部" value="" /><el-option label="活跃" value="ACTIVE" /><el-option label="归档" value="ARCHIVED" /></el-select><el-button @click="coursePage = 1; loadCourses()">搜索</el-button></div></div>
+      <div class="section-heading"><div><h2>全局课程治理</h2><p class="muted">按学期、状态和名称检索课程，治理负责人与归档状态。</p></div><div class="button-row"><el-input v-model="courseSearch" placeholder="课程名称或代码" clearable @keyup.enter="coursePage = 1; loadCourses()" /><el-select v-model="courseSemesterId" clearable placeholder="全部学期" aria-label="学期筛选" class="semester-filter" @change="coursePage = 1; loadCourses()"><el-option v-for="item in semesters" :key="item.id" :label="item.name" :value="item.id" /></el-select><el-select v-model="courseStatus" aria-label="课程状态筛选" placeholder="全部状态" class="course-status-filter" @change="coursePage = 1; loadCourses()"><el-option label="全部" value="" /><el-option label="活跃" value="ACTIVE" /><el-option label="归档" value="ARCHIVED" /></el-select><el-button @click="coursePage = 1; loadCourses()">搜索</el-button></div></div>
       <el-table v-if="courses.length" :data="courses" stripe>
         <el-table-column prop="code" label="课程代码" min-width="130" />
         <el-table-column prop="name" label="课程名称" min-width="190" />
@@ -350,19 +370,19 @@ onMounted(load)
         <el-table-column prop="createdAt" label="创建时间" min-width="190" />
         <el-table-column label="操作" width="210"><template #default="scope"><el-button link type="primary" @click="openCourseEdit(scope.row)">编辑</el-button><el-button link @click="transferOwner(scope.row)">负责人</el-button><el-button link :type="scope.row.status === 'ARCHIVED' ? 'success' : 'warning'" @click="toggleCourseArchive(scope.row)">{{ scope.row.status === 'ARCHIVED' ? '恢复' : '归档' }}</el-button></template></el-table-column>
       </el-table>
-      <EmptyState v-else title="暂无课程" description="教师创建课程后会在这里显示。" />
-      <el-pagination v-if="courseTotal > 20" v-model:current-page="coursePage" background layout="prev, pager, next" :page-size="20" :total="courseTotal" @current-change="loadCourses" />
+      <EmptyState v-else-if="!loading && !errorMessage" title="暂无课程" description="教师创建课程后会在这里显示。" />
+      <p v-if="courseTotal > 0" class="record-count">共 {{ courseTotal }} 条课程记录</p><el-pagination v-if="courseTotal > 0" v-model:current-page="coursePage" background layout="prev, pager, next" :page-size="20" :total="courseTotal" @current-change="loadCourses" />
     </section>
     </el-tab-pane>
     </el-tabs>
-    <el-dialog v-model="createVisible" title="创建平台账号" width="min(520px,94vw)"><el-form label-position="top"><div class="form-grid"><el-form-item label="姓名" :error="userErrors.displayName"><el-input v-model="form.displayName" /></el-form-item><el-form-item label="账号类型"><el-select v-model="form.accountType"><el-option label="教师" value="TEACHER" /><el-option label="学生" value="STUDENT" /></el-select></el-form-item></div><el-form-item label="平台角色"><el-select v-model="form.platformRole" style="width:100%"><el-option label="普通用户" value="USER" /><el-option label="平台管理员" value="ADMIN" /></el-select></el-form-item><el-form-item label="用户名" :error="userErrors.username"><el-input v-model="form.username" :placeholder="USERNAME_HINT" @blur="validateUsername" /></el-form-item><el-form-item v-if="form.accountType === 'STUDENT'" label="学号" :error="userErrors.studentNo"><el-input v-model="form.studentNo" /></el-form-item><el-form-item label="邮箱" :error="userErrors.email"><el-input v-model="form.email" /></el-form-item><el-form-item label="初始密码" :error="userErrors.password"><el-input v-model="form.password" type="password" show-password /></el-form-item></el-form><template #footer><el-button @click="createVisible=false">取消</el-button><el-button type="primary" @click="createUser">创建</el-button></template></el-dialog>
+    <el-dialog v-model="createVisible" title="创建平台账号" width="min(520px,94vw)"><el-form label-position="top"><div class="form-grid"><el-form-item label="姓名" :error="userErrors.displayName"><el-input v-model="form.displayName" /></el-form-item><el-form-item label="账号类型"><el-select v-model="form.accountType"><el-option label="教师" value="TEACHER" /><el-option label="学生" value="STUDENT" /></el-select></el-form-item></div><el-form-item label="平台角色"><el-select v-model="form.platformRole" style="width:100%"><el-option label="普通用户" value="USER" /><el-option label="平台管理员" value="ADMIN" /></el-select></el-form-item><el-form-item label="用户名" :error="userErrors.username"><el-input v-model="form.username" :placeholder="USERNAME_HINT" @blur="validateUsername" /></el-form-item><el-form-item v-if="form.accountType === 'STUDENT'" label="学号" :error="userErrors.studentNo"><el-input v-model="form.studentNo" /></el-form-item><el-form-item label="邮箱" :error="userErrors.email"><el-input v-model="form.email" /></el-form-item><el-form-item label="初始密码" :error="userErrors.password"><el-input v-model="form.password" type="password" show-password /></el-form-item></el-form><template #footer><el-button @click="createVisible=false">取消</el-button><el-button type="primary" :loading="savingUser" @click="createUser">创建</el-button></template></el-dialog>
     <el-dialog v-model="semesterVisible" :title="editingSemesterId ? '修改学期' : '创建学期'" width="min(540px,94vw)">
       <el-form label-position="top">
         <div class="form-grid"><el-form-item label="学期编号"><el-input :model-value="editingSemesterId ? semesterForm.code : '创建后由系统生成'" disabled /></el-form-item><el-form-item label="学期名称"><el-input v-model="semesterForm.name" placeholder="2026 秋季学期" /></el-form-item></div>
         <div class="form-grid"><el-form-item label="开始日期"><el-date-picker v-model="semesterForm.startsOn" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item><el-form-item label="结束日期"><el-date-picker v-model="semesterForm.endsOn" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></div>
         <el-form-item label="初始状态"><el-select v-model="semesterForm.status" style="width:100%"><el-option label="规划中" value="PLANNED" /><el-option label="进行中" value="ACTIVE" /><el-option label="已结束" value="CLOSED" /></el-select></el-form-item>
       </el-form>
-      <template #footer><el-button @click="semesterVisible=false">取消</el-button><el-button type="primary" @click="createSemester">保存学期</el-button></template>
+      <template #footer><el-button @click="semesterVisible=false">取消</el-button><el-button type="primary" :loading="savingSemester" @click="createSemester">保存学期</el-button></template>
     </el-dialog>
     <el-dialog v-model="courseEditVisible" title="编辑课程" width="min(520px,94vw)">
       <el-form label-position="top">
@@ -375,7 +395,7 @@ onMounted(load)
           </el-select>
         </el-form-item>
       </el-form>
-      <template #footer><el-button @click="courseEditVisible=false">取消</el-button><el-button type="primary" @click="saveCourseEdit">保存</el-button></template>
+      <template #footer><el-button @click="courseEditVisible=false">取消</el-button><el-button type="primary" :loading="savingCourse" @click="saveCourseEdit">保存</el-button></template>
     </el-dialog>
     <el-dialog v-model="userDetailVisible" title="账号详情" width="min(620px,94vw)">
       <template v-if="selectedUser">
@@ -405,4 +425,4 @@ onMounted(load)
   </div>
 </template>
 
-<style scoped>.semester-panel,.audit-panel{margin-bottom:18px}.section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.section-heading h2,.section-heading p{margin:0}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.el-tag+.el-tag{margin-left:5px}.import-button{display:inline-flex;align-items:center;padding:0 12px;border:1px solid #dcdfe6;border-radius:4px;cursor:pointer;white-space:nowrap}.import-button input{display:none}@media(max-width:560px){.form-grid{grid-template-columns:1fr;gap:0}.section-heading{align-items:stretch;flex-direction:column}}</style>
+<style scoped>.semester-panel,.audit-panel{margin-bottom:18px}.section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.section-heading h2,.section-heading p{margin:0}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.el-tag+.el-tag{margin-left:5px}.import-button{display:inline-flex;align-items:center;padding:0 12px;border:1px solid #dcdfe6;border-radius:4px;cursor:pointer;white-space:nowrap}.import-button{position:relative;min-height:38px}.import-button:focus-within{outline:2px solid var(--brand);outline-offset:3px}.import-button input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}.account-type-filter{width:170px}.semester-filter{width:180px}.course-status-filter{width:130px}@media(max-width:560px){.form-grid{grid-template-columns:1fr;gap:0}.section-heading{align-items:stretch;flex-direction:column}}</style>

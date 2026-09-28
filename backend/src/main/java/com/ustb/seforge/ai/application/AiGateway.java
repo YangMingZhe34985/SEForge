@@ -228,6 +228,53 @@ public class AiGateway {
         throw new AiUnavailableException("AI returned invalid structured output", last);
     }
 
+    /** Bounded streaming transport for long structured generations; only validated complete output is returned. */
+    public <T> T completeJsonStreaming(AiRequest request, Duration timeout, Class<T> responseType, Consumer<T> validator) {
+        return completeJsonStreaming(request, timeout, responseType, validator, java.util.function.UnaryOperator.identity());
+    }
+
+    public <T> T completeJsonStreaming(AiRequest request, Duration timeout, Class<T> responseType, Consumer<T> validator,
+            java.util.function.UnaryOperator<com.fasterxml.jackson.databind.JsonNode> normalizer) {
+        if (timeout == null || timeout.isZero() || timeout.isNegative() || timeout.compareTo(Duration.ofMinutes(10)) > 0)
+            throw new IllegalArgumentException("Structured generation timeout must be within 10 minutes");
+        var result = new java.util.concurrent.CompletableFuture<AiResponse>();
+        var structured = new AiRequest(request.capability(), request.userId(), request.courseId(), request.promptVersion(),
+                normalizeSystemPrompt(request.systemPrompt()) + "\nReturn only the target JSON object, without an envelope or commentary."
+                        + outputParser.outputFormatInstructions(responseType), request.userPrompt(), request.toolCalls(), request.memoryContext());
+        AiStreamHandle handle = stream(structured, timeout, ignored -> {}, result::complete, result::completeExceptionally);
+        AiResponse response;
+        try {
+            response = result.get(timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            handle.cancel();
+            throw new AiUnavailableException("Structured generation timed out", e);
+        } catch (InterruptedException e) {
+            handle.cancel(); Thread.currentThread().interrupt();
+            throw new AiUnavailableException("Structured generation interrupted", e);
+        } catch (java.util.concurrent.ExecutionException e) {
+            throw new AiUnavailableException("Structured generation provider failed", e.getCause());
+        }
+        try {
+            var tree = objectMapper.reader().with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_READING_DUP_TREE_KEY)
+                    .readTree(stripCodeFence(response.text()));
+            var normalized = normalizer.apply(tree);
+            T parsed = objectMapper.readerFor(responseType)
+                    .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
+                    .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_NULL_CREATOR_PROPERTIES)
+                    .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+                    .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readValue(objectMapper.writeValueAsString(normalized));
+            if (parsed == null || !structuredValidators.getValidator().validate(parsed).isEmpty())
+                throw new IllegalArgumentException("Structured result failed constraint validation");
+            validator.accept(parsed);
+            return parsed;
+        } catch (JsonProcessingException | IllegalArgumentException e) {
+            throw new AiUnavailableException("AI returned invalid structured output", e);
+        }
+    }
+
     public AiStreamHandle stream(AiRequest request, Consumer<String> onDelta,
                                  Consumer<AiResponse> onComplete, Consumer<Throwable> onError) {
         return stream(request, onDelta, onComplete, onError, () -> {});
@@ -236,18 +283,30 @@ public class AiGateway {
     public AiStreamHandle stream(AiRequest request, Consumer<String> onDelta,
                                  Consumer<AiResponse> onComplete, Consumer<Throwable> onError,
                                  Runnable onCancelled) {
+        return startStream(request, router.candidates(request.capability()), router.timeout(), onDelta, onComplete, onError, onCancelled);
+    }
+
+    public AiStreamHandle stream(AiRequest request, Duration attemptTimeout, Consumer<String> onDelta,
+                                 Consumer<AiResponse> onComplete, Consumer<Throwable> onError) {
+        return startStream(request, router.streamingCandidates(request.capability(), attemptTimeout), attemptTimeout,
+                onDelta, onComplete, onError, () -> {});
+    }
+
+    private AiStreamHandle startStream(AiRequest request, List<AiModelEndpoint> candidates, Duration timeout,
+                                      Consumer<String> onDelta, Consumer<AiResponse> onComplete,
+                                      Consumer<Throwable> onError, Runnable onCancelled) {
         AtomicBoolean cancelled = new AtomicBoolean(false);
         AiStreamHandle handle = new AiStreamHandle(cancelled, new AtomicReference<>());
         List<AiModelEndpoint> attempts = new ArrayList<>();
-        for (var endpoint : router.candidates(request.capability())) {
+        for (var endpoint : candidates) {
             for (int retry = 0; retry <= router.streamingRetries(); retry++) attempts.add(endpoint);
         }
-        streamCandidate(request, attempts, 0, new AtomicInteger(),
+        streamCandidate(request, attempts, timeout, 0, new AtomicInteger(),
                 new AtomicBoolean(), handle, onDelta, onComplete, onError, onCancelled);
         return handle;
     }
 
-    private void streamCandidate(AiRequest request, List<AiModelEndpoint> candidates, int index,
+    private void streamCandidate(AiRequest request, List<AiModelEndpoint> candidates, Duration timeout, int index,
                                  AtomicInteger emittedTokens, AtomicBoolean terminal, AiStreamHandle handle,
                                  Consumer<String> onDelta, Consumer<AiResponse> onComplete,
                                  Consumer<Throwable> onError, Runnable onCancelled) {
@@ -288,17 +347,17 @@ public class AiGateway {
                 StreamingHandle current = providerHandle.get();
                 if (current != null && !current.isCancelled()) current.cancel();
                 if (!handle.isCancelled() && emittedTokens.get() == 0 && index + 1 < candidates.size()) {
-                    streamCandidate(request, candidates, index + 1, emittedTokens, terminal, handle,
+                    streamCandidate(request, candidates, timeout, index + 1, emittedTokens, terminal, handle,
                             onDelta, onComplete, onError, onCancelled);
                 } else if (handle.finish(AiStreamHandle.TerminalState.ERROR) && terminal.compareAndSet(false, true)) {
                     onError.accept(new AiUnavailableException("AI stream failed", failure));
                 }
             }
         };
-        Duration timeout = router.timeout();
-        if (timeout == null || timeout.isNegative() || timeout.isZero()) timeout = Duration.ofSeconds(45);
+        Duration effectiveTimeout = timeout;
+        if (effectiveTimeout == null || effectiveTimeout.isNegative() || effectiveTimeout.isZero()) effectiveTimeout = Duration.ofSeconds(45);
         deadline.set(streamDeadlines.schedule(() -> failAttempt.accept(new java.util.concurrent.TimeoutException("AI stream timeout")),
-                timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS));
+                effectiveTimeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS));
         try {
             TokenStream tokenStream = tokenStream(request, endpoint);
             if (handle.isCancelled()) return;

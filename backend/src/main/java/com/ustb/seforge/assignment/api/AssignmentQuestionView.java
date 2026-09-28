@@ -11,5 +11,7 @@ public record AssignmentQuestionView(
         List<String> options,
         BigDecimal points,
         int orderIndex,
-        Long knowledgePointId) {
+        Long knowledgePointId,
+        java.util.Map<String,Object> config,
+        String referenceAnswer) {
 }

@@ -57,10 +57,10 @@ public class DashboardQueryService {
                         + submissionClassClause(classId)
                         + " GROUP BY s.assignment_id,s.user_id) completed_submissions",
                 submissionArgs(courseId, classId));
-        BigDecimal average = decimal("SELECT AVG(g.final_score*100/NULLIF(r.total_score,0)) FROM grade g "
+        BigDecimal average = decimal("SELECT AVG(g.final_score*100/NULLIF(COALESCE((SELECT SUM(q.max_score) FROM assignment_question q WHERE q.assignment_id=s.assignment_id AND q.course_id=s.course_id),r.total_score),0)) FROM grade g "
                         + "JOIN submission s ON s.id=g.submission_id "
-                        + "JOIN rubric r ON r.assignment_id=s.assignment_id "
-                        + "WHERE g.course_id=? AND g.status='CONFIRMED'"
+                        + "LEFT JOIN rubric r ON r.assignment_id=s.assignment_id "
+                        + "WHERE g.course_id=? AND g.status IN ('CONFIRMED','PUBLISHED')"
                         + classClause("s.class_id", classId),
                 args(courseId, classId));
         BigDecimal completionRate = expected == 0 ? BigDecimal.ZERO
@@ -78,10 +78,10 @@ public class DashboardQueryService {
         String sql = "SELECT CASE WHEN normalized_score<60 THEN '0-59' "
                 + "WHEN normalized_score<70 THEN '60-69' WHEN normalized_score<80 THEN '70-79' "
                 + "WHEN normalized_score<90 THEN '80-89' ELSE '90-100' END score_bucket,COUNT(*) total "
-                + "FROM (SELECT g.final_score*100/NULLIF(r.total_score,0) normalized_score "
+                + "FROM (SELECT g.final_score*100/NULLIF(COALESCE((SELECT SUM(q.max_score) FROM assignment_question q WHERE q.assignment_id=s.assignment_id AND q.course_id=s.course_id),r.total_score),0) normalized_score "
                 + "FROM grade g JOIN submission s ON s.id=g.submission_id "
-                + "JOIN rubric r ON r.assignment_id=s.assignment_id "
-                + "WHERE g.course_id=? AND g.status='CONFIRMED'"
+                + "LEFT JOIN rubric r ON r.assignment_id=s.assignment_id "
+                + "WHERE g.course_id=? AND g.status IN ('CONFIRMED','PUBLISHED')"
                 + classClause("s.class_id", classId)
                 + ") normalized_grades GROUP BY score_bucket ORDER BY MIN(normalized_score)";
         return jdbc.query(sql, (rs, row) -> new GradeBucket(
@@ -90,15 +90,14 @@ public class DashboardQueryService {
 
     private List<KnowledgePointMetric> knowledgePoints(Long courseId, Long classId) {
         String sql = "SELECT kp.id,kp.title,COUNT(f.id) evaluated_items,"
-                + "SUM(f.final_score) earned,SUM(ri.max_score) possible "
-                + "FROM knowledge_points kp "
-                + "JOIN assignment_question aq ON aq.knowledge_point_id=kp.id "
-                + "JOIN rubric_item ri ON ri.question_id=aq.id "
-                + "JOIN feedback f ON f.rubric_item_id=ri.id AND f.final_score IS NOT NULL "
-                + "JOIN grade g ON g.id=f.grade_id AND g.status='CONFIRMED' "
+                + "SUM(f.final_score) earned,SUM(COALESCE(ri.max_score,aq.max_score-COALESCE((SELECT SUM(i.max_score) FROM rubric_item i WHERE i.question_id=aq.id),0))) possible "
+                + "FROM feedback f LEFT JOIN rubric_item ri ON ri.id=f.rubric_item_id "
+                + "JOIN assignment_question aq ON aq.id=COALESCE(ri.question_id,f.question_id) "
+                + "JOIN knowledge_points kp ON kp.id=aq.knowledge_point_id "
+                + "JOIN grade g ON g.id=f.grade_id AND g.status IN ('CONFIRMED','PUBLISHED') "
                 + "JOIN submission s ON s.id=g.submission_id "
-                + "WHERE kp.course_id=?" + classClause("s.class_id", classId)
-                + " GROUP BY kp.id,kp.title ORDER BY (SUM(f.final_score)/NULLIF(SUM(ri.max_score),0)),kp.id";
+                + "WHERE kp.course_id=? AND f.final_score IS NOT NULL AND aq.assignment_id=s.assignment_id AND aq.course_id=g.course_id" + classClause("s.class_id", classId)
+                + " GROUP BY kp.id,kp.title ORDER BY (SUM(f.final_score)/NULLIF(SUM(COALESCE(ri.max_score,aq.max_score-COALESCE((SELECT SUM(i.max_score) FROM rubric_item i WHERE i.question_id=aq.id),0))),0)),kp.id";
         return jdbc.query(sql, (rs, row) -> {
             BigDecimal earned = rs.getBigDecimal("earned");
             BigDecimal possible = rs.getBigDecimal("possible");

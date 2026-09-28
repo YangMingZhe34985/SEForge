@@ -87,7 +87,8 @@ class ReviewExecutionServiceCodeTest {
                 new SecureArchiveValidator(),
                 sonar,
                 objectMapper,
-                asyncJobs);
+                asyncJobs, mock(com.ustb.seforge.assignment.service.AssignmentMediaService.class),
+                mock(com.ustb.seforge.content.service.MultimodalContentProcessor.class), mock(ReviewSubmissionService.class));
         when(asyncJobs.isExecutionActive(77L, "test-worker")).thenReturn(true);
         doAnswer(invocation -> {
             invocation.<Runnable>getArgument(2).run();
@@ -119,8 +120,8 @@ class ReviewExecutionServiceCodeTest {
             return new SonarGateway.Analysis(request.projectKey(), "task-1", "analysis-1",
                     "ERROR", Map.of("bugs", "1", "complexity", "2"), List.of(finding));
         });
-        when(prompts.load("code-review", "v2"))
-                .thenReturn(new PromptCatalog.PromptTemplate("code-review", "v2", "Explain issues"));
+        when(prompts.load("code-review", "v3"))
+                .thenReturn(new PromptCatalog().load("code-review", "v3"));
         when(ai.complete(any())).thenReturn(new AiResponse("""
                 {"summary":"One issue found","explanations":[{"findingKey":"issue-1","explanation":"A resource leaks","impact":"Resource exhaustion","remediation":"Use try-with-resources"}]}
                 """, "fake", "fake-coder", 10, 20));

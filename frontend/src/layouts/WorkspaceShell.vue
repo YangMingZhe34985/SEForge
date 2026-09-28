@@ -88,7 +88,7 @@ watch(
         </template>
       </nav>
 
-      <button class="sidebar__toggle" type="button" @click="collapsed = !collapsed">
+      <button class="sidebar__toggle" type="button" :aria-label="collapsed ? '展开导航' : '收起导航'" :aria-expanded="!collapsed" @click="collapsed = !collapsed">
         <el-icon><component :is="collapsed ? MenuIcon : Fold" /></el-icon>
         <span v-if="!collapsed">收起导航</span>
       </button>
@@ -108,7 +108,7 @@ watch(
             <el-option v-for="course in courseStore.courses" :key="course.id" :label="`${course.code} · ${course.name}`" :value="course.id" />
           </el-select>
         </div>
-        <div v-else />
+        <div v-else class="muted">{{ workspaceLabel }}</div>
         <el-dropdown trigger="click">
           <button type="button" class="user-menu">
             <span class="avatar"><el-icon><User /></el-icon></span>

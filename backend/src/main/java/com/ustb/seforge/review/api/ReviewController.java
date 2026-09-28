@@ -37,6 +37,11 @@ public class ReviewController {
             @Valid @RequestBody CreateDocumentReviewRequest request) {
         return ApiEnvelope.success(reviews.submitDocument(courseId, principal.userId(), request));
     }
+    @PostMapping(value="/artifacts",consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiEnvelope<ReviewSubmissionService.ArtifactView> upload(@PathVariable Long courseId,@AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam org.springframework.web.multipart.MultipartFile file){
+        return ApiEnvelope.success(reviews.uploadArtifact(courseId,principal.userId(),file));
+    }
 
     @PostMapping("/assignments")
     public ApiEnvelope<ReviewJobView> assignment(

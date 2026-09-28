@@ -1,18 +1,26 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PageHeader from '@/components/PageHeader.vue'
+import SafeMarkdown from '@/components/SafeMarkdown.vue'
+import GradingWorkbench from '@/components/GradingWorkbench.vue'
+import { useRouter } from 'vue-router'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { reviewApi } from '@/api/reviews'
 import { assignmentApi } from '@/api/assignments'
-import { courseApi } from '@/api/courses'
 import { jobApi } from '@/api/jobs'
 import { useCourseStore } from '@/stores/courses'
-import type { AssignmentSummary, KnowledgeDocument, ReviewJob, ReviewReport, ReviewType, TeacherSubmission } from '@/types/domain'
+import type { AssignmentSummary, AssignmentDetails, ReviewJob, ReviewReport, ReviewType, TeacherSubmission } from '@/types/domain'
 
 const courseStore = useCourseStore()
-const type = ref<ReviewType>('DOCUMENT')
+const type = ref<ReviewType | 'MANUAL'>('ASSIGNMENT')
+const router = useRouter()
+const manualVisible = ref(false)
+const artifact = ref<{ id: string; fileName: string }>()
+const selectedDocument = ref('')
+const documentSource = ref('submission')
+const selectedAssignmentDetails = ref<AssignmentDetails>()
 const jobs = ref<ReviewJob[]>([])
 const report = ref<ReviewReport | null>(null)
 const selectedJobId = ref<string | null>(null)
@@ -20,22 +28,15 @@ const loading = ref(false)
 const submitting = ref(false)
 const pageError = ref('')
 const reportError = ref('')
-const confirmingGrade = ref(false)
 const jobPage = ref(0)
 const jobSize = 20
 const jobTotal = ref(0)
-const documents = ref<KnowledgeDocument[]>([])
-const selectedDocumentId = ref('')
 const documentType = ref('SRS')
 const submissionId = ref('')
 const reviewAssignments = ref<AssignmentSummary[]>([])
 const selectedAssignmentId = ref('')
 const teacherSubmissions = ref<TeacherSubmission[]>([])
 const selectedCodeAttachment = ref('')
-const gradeVisible = ref(false)
-const gradeForm = reactive({ score: 0, feedback: '', reason: '' })
-const gradeMaximum = ref(100)
-const gradeRubricItems = ref<Array<{ rubricItemId: string; title: string; score: number; suggestedScore: number; maxScore?: number; feedback: string }>>([])
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let courseGeneration = 0
 let jobsRequestGeneration = 0
@@ -44,7 +45,6 @@ let submissionRequestGeneration = 0
 
 const courseId = computed(() => courseStore.selectedCourseId)
 const selectedJob = computed(() => jobs.value.find((job) => job.id === selectedJobId.value))
-const canConfirmGrade = computed(() => courseStore.selectedCourse?.role === 'TEACHER')
 const submittedOptions = computed(() => teacherSubmissions.value.filter((item) => item.submission.status !== 'DRAFT'))
 const codeAttachmentOptions = computed(() => submittedOptions.value.flatMap((item) =>
   item.submission.answers.flatMap((answer) => answer.attachmentObjectKey ? [{
@@ -57,6 +57,7 @@ const codeAttachmentOptions = computed(() => submittedOptions.value.flatMap((ite
 
 async function loadJobs(silent = false) {
   const requestedCourseId = courseId.value
+  if (type.value === 'MANUAL') { jobs.value = []; jobTotal.value = 0; return }
   const requestedType = type.value
   const requestedPage = jobPage.value
   const courseVersion = courseGeneration
@@ -124,9 +125,26 @@ function changeJobPage(page: number) {
   void loadJobs()
 }
 
+const documentOptions = computed(() => submittedOptions.value.flatMap(item => item.submission.answers.flatMap(answer => {
+  if (!selectedAssignmentDetails.value?.questions.some(q => q.id === answer.questionId && q.type === 'DOCUMENT_REPORT')) return []
+  const data = answer.answer
+  const ids = data && typeof data === 'object' && !Array.isArray(data) ? data.assetIds : []
+  const entries: { key: string; submissionId: string; questionId: string; mediaId?: string; label: string }[] = ids.map(mediaId => ({ key: item.submission.id + ':' + mediaId, submissionId: item.submission.id, questionId: answer.questionId, mediaId, label: item.studentName + ' · 文档附件 #' + mediaId }))
+  return entries.length ? entries : answer.attachmentObjectKey ? [{ key: item.submission.id + ':' + answer.questionId, submissionId: item.submission.id, questionId: answer.questionId, mediaId: undefined, label: item.studentName + ' · ' + (answer.attachmentFileName || '提交附件') }] : []
+})))
+async function uploadArtifact(file?: File) {
+  if (!courseId.value || !file) return
+  const course = courseId.value; submitting.value = true
+  try { const result = await reviewApi.uploadArtifact(course, file); if (course === courseId.value) artifact.value = result }
+  catch (e) { ElMessage.error(e instanceof Error ? e.message : '上传失败') }
+  finally { submitting.value = false }
+}
 async function startDocumentReview() {
-  if (!courseId.value || !selectedDocumentId.value) return ElMessage.warning('请选择课程知识文档')
-  await createJob(() => reviewApi.createDocument(courseId.value!, selectedDocumentId.value, documentType.value))
+  if (!courseId.value) return
+  const source = documentOptions.value.find(d => d.key === selectedDocument.value)
+  const target = documentSource.value === 'artifact' ? { artifactId: artifact.value?.id } : source
+  if (!target || (documentSource.value === 'artifact' && !artifact.value)) return ElMessage.warning('请选择学生文档或上传待评审文档')
+  await createJob(() => reviewApi.createDocument(courseId.value!, target, documentType.value))
 }
 
 async function startCodeReview() {
@@ -195,89 +213,6 @@ async function exportReport() {
   catch (error) { ElMessage.error(error instanceof Error ? error.message : '报告导出失败') }
 }
 
-async function openGradeDialog() {
-  const courseVersion = courseGeneration
-  const reviewJobId = selectedJob.value?.id
-  gradeMaximum.value = 100
-  gradeForm.score = report.value?.scoreSuggestion || 0
-  gradeForm.feedback = report.value?.summary || ''
-  gradeForm.reason = ''
-  let definitions = new Map<string, { title: string; maxScore: number }>()
-  if (selectedJob.value?.assignmentId) {
-    try {
-      const rubric = await assignmentApi.rubric(selectedJob.value.assignmentId)
-      gradeMaximum.value = rubric?.totalScore || 100
-      definitions = new Map((rubric?.items || []).map((item) => [item.id, { title: item.title, maxScore: item.maxScore }]))
-    } catch (error) {
-      ElMessage.warning(error instanceof Error ? error.message : '无法加载 Rubric 上限')
-    }
-  }
-  if (courseVersion !== courseGeneration || selectedJob.value?.id !== reviewJobId) return
-  gradeRubricItems.value = (report.value?.rubricItems || []).map((item) => ({
-    rubricItemId: item.rubricItemId,
-    title: definitions.get(item.rubricItemId)?.title || item.title,
-    score: item.suggestedScore,
-    suggestedScore: item.suggestedScore,
-    maxScore: definitions.get(item.rubricItemId)?.maxScore || item.maxScore,
-    feedback: item.feedback || '',
-  }))
-  gradeVisible.value = true
-}
-
-function syncGradeTotal() {
-  if (gradeRubricItems.value.length) {
-    gradeForm.score = gradeRubricItems.value.reduce((sum, item) => sum + item.score, 0)
-  }
-}
-
-async function confirmGrade() {
-  if (confirmingGrade.value) return
-  if (!selectedJob.value?.submissionId) return ElMessage.warning('评审任务未关联提交记录')
-  const courseVersion = courseGeneration
-  const reviewJobId = selectedJob.value.id
-  const submissionId = selectedJob.value.submissionId
-  const totalChanged = report.value?.scoreSuggestion !== undefined && gradeForm.score !== report.value.scoreSuggestion
-  const itemChanged = gradeRubricItems.value.some((item) => item.score !== item.suggestedScore)
-  if ((totalChanged || itemChanged) && !gradeForm.reason.trim()) {
-    return ElMessage.warning('覆盖 AI 建议总分或分项分数时必须填写修改理由')
-  }
-  confirmingGrade.value = true
-  try {
-    await reviewApi.confirmGrade(
-      submissionId,
-      gradeForm.score,
-      gradeForm.feedback,
-      gradeForm.reason || undefined,
-      gradeRubricItems.value.map((item) => ({ rubricItemId: item.rubricItemId, score: item.score, feedback: item.feedback })),
-      report.value?.aiTraceId,
-    )
-    if (courseVersion !== courseGeneration || selectedJob.value?.id !== reviewJobId) return
-    gradeVisible.value = false
-    ElMessage.success('最终成绩已由教师确认')
-  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '成绩确认失败') }
-  finally { confirmingGrade.value = false }
-}
-
-async function loadDocuments() {
-  const requestedCourseId = courseId.value
-  const courseVersion = courseGeneration
-  if (!requestedCourseId) {
-    documents.value = []
-    selectedDocumentId.value = ''
-    return
-  }
-  try {
-    const result = await courseApi.documents(requestedCourseId)
-    if (courseVersion !== courseGeneration || requestedCourseId !== courseId.value) return
-    documents.value = result
-    if (!documents.value.some((item) => item.id === selectedDocumentId.value)) {
-      selectedDocumentId.value = documents.value[0]?.id || ''
-    }
-  } catch (error) {
-    if (courseVersion === courseGeneration) ElMessage.error(error instanceof Error ? error.message : '课程文档加载失败')
-  }
-}
-
 async function loadAssignments() {
   reviewAssignments.value = []
   selectedAssignmentId.value = ''
@@ -306,9 +241,10 @@ async function loadSubmissions() {
   const requestVersion = ++submissionRequestGeneration
   if (!assignmentId) return
   try {
-    const result = await assignmentApi.submissions(assignmentId)
+    const [result, details] = await Promise.all([assignmentApi.submissions(assignmentId), assignmentApi.get(assignmentId)])
     if (courseVersion !== courseGeneration || requestVersion !== submissionRequestGeneration
       || assignmentId !== selectedAssignmentId.value) return
+    selectedAssignmentDetails.value = details
     teacherSubmissions.value = result
     submissionId.value = submittedOptions.value[0]?.submission.id || ''
     selectedCodeAttachment.value = codeAttachmentOptions.value[0]?.value || ''
@@ -329,16 +265,17 @@ function activateCourse() {
   jobs.value = []
   jobPage.value = 0
   jobTotal.value = 0
-  documents.value = []
+  artifact.value = undefined
+  selectedDocument.value = ''
+  selectedAssignmentDetails.value = undefined
   reviewAssignments.value = []
   selectedAssignmentId.value = ''
   teacherSubmissions.value = []
   loading.value = false
   submitting.value = false
-  gradeVisible.value = false
+  manualVisible.value = false
   pageError.value = ''
   reportError.value = ''
-  void loadDocuments()
   void loadAssignments()
   void loadJobs()
 }
@@ -370,7 +307,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div>
-    <PageHeader title="智能评审" description="文档、作业与代码评审均为异步任务；AI 分数只是建议，最终成绩必须由教师确认。">
+    <PageHeader title="评审中心" description="初评中心：RULE / AI / MANUAL 只产生建议；到“成绩与反馈”确认并发布正式成绩。">
       <el-button @click="loadJobs()">刷新任务</el-button>
     </PageHeader>
 
@@ -378,6 +315,7 @@ onBeforeUnmount(() => {
       <el-tab-pane label="文档 Review" name="DOCUMENT" />
       <el-tab-pane label="作业 Review" name="ASSIGNMENT" />
       <el-tab-pane label="代码 Review" name="CODE" />
+      <el-tab-pane label="人工评审" name="MANUAL" />
     </el-tabs>
     <el-alert v-if="pageError" :title="pageError" type="error" :closable="false"><el-button @click="loadJobs()">重试加载</el-button></el-alert>
 
@@ -388,8 +326,10 @@ onBeforeUnmount(() => {
           <div class="panel__body stack">
             <template v-if="type === 'DOCUMENT'">
               <el-select v-model="documentType"><el-option label="需求规格说明 SRS" value="SRS" /><el-option label="设计说明" value="DESIGN" /><el-option label="测试报告" value="TEST_REPORT" /><el-option label="README" value="README" /><el-option label="API 文档" value="API" /></el-select>
-              <el-select v-model="selectedDocumentId" filterable placeholder="选择已上传的课程知识文档"><el-option v-for="document in documents" :key="document.id" :label="`${document.name} · ${document.status}`" :value="document.id" /></el-select>
-              <el-alert v-if="!documents.length" title="请先在“我的课程”上传待评审文档" type="info" :closable="false" show-icon />
+              <el-radio-group v-model="documentSource"><el-radio value="submission">学生 DOCUMENT_REPORT 提交</el-radio><el-radio value="artifact">上传待评审文档</el-radio></el-radio-group>
+              <template v-if="documentSource === 'submission'"><el-select v-model="selectedAssignmentId" placeholder="选择作业"><el-option v-for="a in reviewAssignments" :key="a.id" :label="a.title" :value="a.id" /></el-select><el-select v-model="selectedDocument" placeholder="选择学生报告附件"><el-option v-for="d in documentOptions" :key="d.key" :label="d.label" :value="d.key" /></el-select></template>
+              <template v-else><input type="file" accept=".pdf,.docx,.md,.txt" :disabled="submitting" @change="uploadArtifact(($event.target as HTMLInputElement).files?.[0])" /><span>{{ artifact?.fileName || '独立评审文件，不加入课程知识库' }}</span></template>
+
               <el-button type="primary" :loading="submitting" @click="startDocumentReview">进入评审队列</el-button>
             </template>
             <template v-else-if="type === 'CODE'">
@@ -400,10 +340,10 @@ onBeforeUnmount(() => {
               <el-button type="primary" :loading="submitting" @click="startCodeReview">进入 SonarQube 评审队列</el-button>
             </template>
             <template v-else>
-              <el-alert title="AI 将按 Rubric 逐项给出证据和建议分，不会直接发布成绩。" type="info" :closable="false" show-icon />
+              <el-alert :title="type === 'MANUAL' ? '人工评审完全不依赖 AI，可在模型失败时继续评分。' : 'AI 将按 Rubric 逐项给出证据和建议分，不会直接发布成绩。'" type="info" :closable="false" show-icon />
               <el-select v-model="selectedAssignmentId" filterable placeholder="选择作业"><el-option v-for="item in reviewAssignments" :key="item.id" :label="item.title" :value="item.id" /></el-select>
               <el-select v-model="submissionId" filterable placeholder="选择学生提交"><el-option v-for="item in submittedOptions" :key="item.submission.id" :label="`${item.studentName} · 第 ${item.submission.attemptNumber} 次`" :value="item.submission.id" /></el-select>
-              <el-button type="primary" :loading="submitting" @click="startAssignmentReview">生成 AI 初评</el-button>
+              <el-button v-if="type !== 'MANUAL'" type="primary" :loading="submitting" @click="startAssignmentReview">生成 AI 初评</el-button><el-button v-else :disabled="!submissionId" @click="manualVisible = true">打开人工评审</el-button>
             </template>
           </div>
         </section>
@@ -428,7 +368,7 @@ onBeforeUnmount(() => {
       </div>
 
       <section class="panel report-panel">
-        <div class="panel__header"><div><h2>结构化报告</h2><span v-if="selectedJob" class="muted">{{ selectedJob.subjectName }}</span></div><div class="button-row"><el-button v-if="selectedJob && ['QUEUED', 'PROCESSING', 'RUNNING'].includes(selectedJob.status)" type="warning" plain @click="cancelSelected">取消任务</el-button><el-button v-if="selectedJob && ['FAILED', 'CANCELLED'].includes(selectedJob.status)" :loading="submitting" @click="retrySelected">重试任务</el-button><el-button v-if="report" @click="exportReport">导出 JSON</el-button><el-button v-if="canConfirmGrade && report?.scoreSuggestion !== undefined && selectedJob?.type === 'ASSIGNMENT'" type="primary" @click="openGradeDialog">教师确认成绩</el-button></div></div>
+        <div class="panel__header"><div><h2>结构化报告</h2><span v-if="selectedJob" class="muted">{{ selectedJob.subjectName }}</span></div><div class="button-row"><el-button v-if="selectedJob && ['QUEUED', 'PROCESSING', 'RUNNING'].includes(selectedJob.status)" type="warning" plain @click="cancelSelected">取消任务</el-button><el-button v-if="selectedJob && ['FAILED', 'CANCELLED'].includes(selectedJob.status)" :loading="submitting" @click="retrySelected">重试任务</el-button><el-button v-if="report" @click="exportReport">导出 JSON</el-button><el-button v-if="selectedJob?.submissionId" type="primary" @click="router.push({ name: 'teacher-grades', query: { submission: selectedJob.submissionId } })">前往成绩与反馈</el-button></div></div>
         <div v-if="report" class="panel__body report-content">
           <p class="muted">{{ report.model }} · {{ report.promptVersion }}<template v-if="report.aiTraceId"> · Trace #{{ report.aiTraceId }}</template></p>
           <el-alert v-if="report.sonar" :title="`SonarQube Quality Gate: ${report.sonar.qualityGate}`" type="info" :closable="false" />
@@ -436,16 +376,17 @@ onBeforeUnmount(() => {
             <h3>Sonar finding · {{ finding.rule }} · {{ finding.severity }}</h3>
             <p>{{ finding.component }}<template v-if="finding.line">:{{ finding.line }}</template> · {{ finding.type }}</p>
             <p>{{ finding.message }}</p><small>{{ finding.findingKey }}</small>
-            <p><strong>AI 解释：</strong>{{ finding.explanation }}</p>
+            <strong>AI 解释：</strong><SafeMarkdown :content="finding.explanation || ''" />
             <p><strong>影响：</strong>{{ finding.impact }}</p><p><strong>修复建议：</strong>{{ finding.remediation }}</p>
           </article>
           <article v-for="issue in report.issues" :key="issue.code" class="report-section">
             <h3>{{ issue.severity }} · {{ issue.message }}</h3><p>依据：{{ issue.evidence }}</p><p>建议：{{ issue.recommendation }}</p>
           </article>
-          <div v-if="report.scoreSuggestion !== undefined" class="score-suggestion"><span>AI 建议分</span><strong>{{ report.scoreSuggestion }}</strong><small>非最终成绩</small></div>
-          <h3>评审摘要</h3><p>{{ report.summary }}</p>
+          <div v-if="report.scoreSuggestion !== undefined" class="score-suggestion"><span>{{ report.rubricItems?.some(item => item.source === 'RULE') ? 'RULE / AI 评分建议' : 'AI 建议分' }}</span><strong>{{ report.scoreSuggestion }}</strong><small>非最终成绩</small></div>
+          <el-alert v-if="report.manualRubricItemIds?.length || report.manualQuestionIds?.length" title="包含 MANUAL 人工评分项：未生成 AI 分数，总分建议不含这些项，请教师逐项评分。" type="info" :closable="false" />
+          <h3>评审摘要</h3><SafeMarkdown :content="report.summary || ''" />
           <template v-for="section in ([['完整性', report.completeness], ['一致性', report.consistency], ['可验证性', report.testability], ['清晰度', report.clarity], ['改进建议', report.suggestions]] as const)" :key="section[0]"><div v-if="section[1]?.length" class="report-section"><h3>{{ section[0] }}</h3><ul><li v-for="item in section[1]" :key="item">{{ item }}</li></ul></div></template>
-          <div v-if="report.rubricItems?.length" class="rubric-list"><h3>Rubric 分项</h3><article v-for="item in report.rubricItems" :key="item.rubricItemId"><div><strong>{{ item.title }}</strong><span>{{ item.suggestedScore }}<template v-if="item.maxScore !== undefined"> / {{ item.maxScore }}</template></span></div><p>{{ item.evidence }}</p><p v-for="problem in item.problems" :key="problem">问题：{{ problem }}</p><small>{{ item.feedback }}</small></article></div>
+          <div v-if="report.rubricItems?.length" class="rubric-list"><h3>评分项</h3><article v-for="item in report.rubricItems" :key="item.rubricItemId || `question:${item.questionId}`"><div><strong>{{ item.title }} · {{ item.source || 'AI' }}</strong><span>{{ item.suggestedScore }}<template v-if="item.maxScore !== undefined"> / {{ item.maxScore }}</template></span></div><p>{{ item.evidence }}</p><p v-for="problem in item.problems" :key="problem">问题：{{ problem }}</p><small>{{ item.feedback }}</small></article></div>
         </div>
         <el-alert v-else-if="reportError" :title="reportError" type="error" :closable="false"><el-button v-if="selectedJob" @click="loadReport(selectedJob)">重试加载报告</el-button></el-alert>
         <el-alert v-else-if="selectedJob?.status === 'FAILED'" :title="selectedJob.errorMessage || '评审失败，可重试'" type="error" :closable="false" />
@@ -453,7 +394,7 @@ onBeforeUnmount(() => {
       </section>
     </section>
 
-    <el-dialog v-model="gradeVisible" title="教师确认最终成绩" width="min(640px, 94vw)"><el-alert title="确认后才会生成 Final Grade；覆盖 AI 建议时请填写理由。" type="warning" :closable="false" /><el-form label-position="top" class="grade-form"><el-form-item :label="`最终分数（满分 ${gradeMaximum}）`"><el-input-number v-model="gradeForm.score" :min="0" :max="gradeMaximum" :disabled="gradeRubricItems.length > 0" /></el-form-item><div v-if="gradeRubricItems.length" class="grade-rubric-list"><strong>Rubric 分项确认（总分自动汇总）</strong><article v-for="item in gradeRubricItems" :key="item.rubricItemId"><span>{{ item.title }}</span><el-input-number v-model="item.score" :min="0" :max="item.maxScore ?? 999" @change="syncGradeTotal" /><el-input v-model="item.feedback" placeholder="分项反馈" /></article></div><el-form-item label="给学生的反馈"><el-input v-model="gradeForm.feedback" type="textarea" :rows="5" /></el-form-item><el-form-item label="修改理由"><el-input v-model="gradeForm.reason" type="textarea" /></el-form-item></el-form><template #footer><el-button @click="gradeVisible = false">取消</el-button><el-button type="primary" @click="confirmGrade">确认并发布</el-button></template></el-dialog>
+    <el-dialog v-model="manualVisible" title="人工初评" width="min(1050px, 96vw)" destroy-on-close :close-on-click-modal="false"><GradingWorkbench v-if="submissionId" :submission-id="submissionId" manual-only /></el-dialog>
   </div>
 </template>
 

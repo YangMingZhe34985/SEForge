@@ -15,6 +15,8 @@ public class Feedback extends BaseEntity {
     private Long gradeId;
     @Column(name = "rubric_item_id")
     private Long rubricItemId;
+    @Column(name = "question_id")
+    private Long questionId;
     @Column(name = "author_id")
     private Long authorId;
     @Enumerated(EnumType.STRING)
@@ -68,6 +70,8 @@ public class Feedback extends BaseEntity {
 
     public Long getGradeId() { return gradeId; }
     public Long getRubricItemId() { return rubricItemId; }
+    public Long getQuestionId() { return questionId; }
+    public Feedback forQuestion(Long questionId) { this.questionId = questionId; return this; }
     public Long getAuthorId() { return authorId; }
     public FeedbackSource getSource() { return source; }
     public String getContent() { return content; }

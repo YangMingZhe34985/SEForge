@@ -1,8 +1,13 @@
 import { apiRequest, apiUrl } from './client'
-import type { GradeRecord, PageResult, ReviewJob, ReviewReport, ReviewType, RubricEvaluation } from '@/types/domain'
+import type { AssignmentDetails, Submission, GradeRecord, PageResult, ReviewJob, ReviewReport, ReviewType, RubricEvaluation } from '@/types/domain'
+
+export interface GradingDetail { grade: GradeRecord; assignment: AssignmentDetails; submission: Submission; targets: { rubricItemId?: string; questionId?: string; maximum: number }[] }
+export interface PublicationPreview { confirmed: number; unconfirmed: number; publishable: number; published: number }
+export interface DocumentReviewTarget { submissionId?: string; questionId?: string; mediaId?: string; artifactId?: string }
 
 export interface GradeRubricConfirmation {
-  rubricItemId: string
+  rubricItemId?: string
+  questionId?: string
   score: number
   feedback?: string
 }
@@ -60,13 +65,14 @@ function dimensionFindings(result: Record<string, unknown>, keyword: string): st
 }
 
 function rubricItems(result: Record<string, unknown>): RubricEvaluation[] {
-  if (!Array.isArray(result.rubricItems)) return []
-  return result.rubricItems.flatMap((raw) => {
+  return [...(Array.isArray(result.rubricItems) ? result.rubricItems : []), ...(Array.isArray(result.questionScores) ? result.questionScores : [])].flatMap((raw) => {
     if (!raw || typeof raw !== 'object') return []
     const item = raw as Record<string, unknown>
     return [{
       rubricItemId: String(item.rubricItemId ?? ''),
-      title: `Rubric #${String(item.rubricItemId ?? '')}`,
+      questionId: item.questionId != null ? String(item.questionId) : undefined,
+      source: item.source === 'RULE' || item.questionId != null ? 'RULE' : 'AI',
+      title: item.questionId != null ? `题目 #${String(item.questionId)}` : `Rubric #${String(item.rubricItemId ?? '')}`,
       suggestedScore: Number(item.suggestedScore ?? 0),
       evidence: stringList(item.evidence).join('；'),
       problems: stringList(item.issues),
@@ -114,7 +120,9 @@ function toReport(value: ReviewReportResponse, type: ReviewType): ReviewReport {
     jobId: value.reviewJobId,
     type,
     summary: value.summary,
-    scoreSuggestion: typeof value.result.totalSuggestedScore === 'number' ? value.result.totalSuggestedScore : undefined,
+    manualRubricItemIds: Array.isArray(value.result.manualRubricItemIds) ? value.result.manualRubricItemIds.map(String) : [],
+    manualQuestionIds: Array.isArray(value.result.manualQuestionIds) ? value.result.manualQuestionIds.map(String) : [],
+    scoreSuggestion: value.model !== 'MANUAL' && typeof value.result.totalSuggestedScore === 'number' ? value.result.totalSuggestedScore : undefined,
     completeness: dimensionFindings(value.result, 'COMPLETE'),
     consistency: dimensionFindings(value.result, 'CONSIST'),
     testability: dimensionFindings(value.result, 'VERIFI'),
@@ -136,11 +144,11 @@ export const reviewApi = {
   report: (courseId: string, job: ReviewJob) =>
     apiRequest<ReviewReportResponse>({ url: `/courses/${courseId}/reviews/${job.id}/report` })
       .then((value) => toReport(value, job.type)),
-  createDocument: (courseId: string, documentId: string, documentKind: string) =>
+  createDocument: (courseId: string, target: DocumentReviewTarget, documentKind: string) =>
     apiRequest<ReviewJobResponse>({
       url: `/courses/${courseId}/reviews/documents`,
       method: 'POST',
-      data: { documentId, documentKind, idempotencyKey: crypto.randomUUID() },
+      data: { ...target, documentKind, idempotencyKey: crypto.randomUUID() },
     }).then(toJob),
   createCode: (courseId: string, submissionId: string, attachmentObjectKey: string) =>
     apiRequest<ReviewJobResponse>({
@@ -160,8 +168,18 @@ export const reviewApi = {
       method: 'POST',
       data: { score, feedback, reason, rubricItems, expectedAiTraceId },
     }),
-  grades: (courseId?: string) =>
-    apiRequest<PageResult<GradeRecord>>({ url: '/grades', params: { courseId, page: 0, size: 100 } }),
+  grades: (courseId?: string, page = 0, size = 20) =>
+    apiRequest<PageResult<GradeRecord>>({ url: '/grades', params: { courseId, page, size } }),
+  grading: (id: string) => apiRequest<GradingDetail>({ url: `/submissions/${id}/grading` }),
+  manualReview: (id: string, score: number, feedback: string, reason: string, rubricItems: GradeRubricConfirmation[]) =>
+    apiRequest<GradeRecord>({ url: `/submissions/${id}/grade/manual-review`, method: 'POST', data: { score, feedback, reason, rubricItems } }),
+  publish: (id: string) => apiRequest<GradeRecord>({ url: `/submissions/${id}/grade/publish`, method: 'POST' }),
+  publicationPreview: (id: string) => apiRequest<PublicationPreview>({ url: `/assignments/${id}/grades/publication` }),
+  publishAssignment: (id: string) => apiRequest<PublicationPreview>({ url: `/assignments/${id}/grades/publish`, method: 'POST' }),
+  uploadArtifact: (courseId: string, file: File) => {
+    const data = new FormData(); data.append('file', file)
+    return apiRequest<{ id: string; fileName: string }>({ url: `/courses/${courseId}/reviews/artifacts`, method: 'POST', data })
+  },
   retry: (courseId: string, reviewJobId: string) =>
     apiRequest<ReviewJobResponse>({
       url: `/courses/${courseId}/reviews/${reviewJobId}/retry`,

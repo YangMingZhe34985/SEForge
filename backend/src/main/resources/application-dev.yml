@@ -18,7 +18,7 @@ server:
 
 seforge:
   security:
-    allowed-origins: http://localhost:5173
+    allowed-origins: ${SEFORGE_DEV_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
     secure-cookie: false
 
 management:

@@ -112,6 +112,18 @@ try {
    await writeFile('target/bug-audit-qa.sse',stream)
    const qaEvents=[...stream.matchAll(/event:([^\n]+)/g)].map(m=>m[1]);results.push({check:'courseQA',events:qaEvents,bytes:stream.length});console.log(JSON.stringify({qaEvents,qaBytes:stream.length}))
    check('qaCitationAndUniqueSuccess', qaEvents.includes('citation') && qaEvents.includes('message.delta') && qaEvents.filter(e=>['done','error','cancelled'].includes(e)).join(',') === 'done')
+   const generation = await client.request(`/courses/${course.id}/conversations/${conversation.id}/generation`)
+   const history = await client.request(`/courses/${course.id}/conversations/${conversation.id}/messages`)
+   check('durableGenerationCompleted', generation.status === 'COMPLETED' && history.items.filter(m => m.role === 'ASSISTANT').length === 1)
+   if (process.env.AUDIT_COURSE_ONLY === 'true') {
+     const empty = await client.request('/courses','POST',{name:'Empty evidence audit '+suffix,semesterId:semester.id},201)
+     const emptyConversation = await client.request(`/courses/${empty.id}/conversations`,'POST',{})
+     const refusal = await client.request(`/courses/${empty.id}/conversations/${emptyConversation.id}/messages`,'POST',{
+       requestId:randomUUID(),content:'What properties must requirements have?'})
+     check('emptyCourseRefuses', refusal.includes('没有足够可靠的依据') && !refusal.includes('event:citation') && refusal.includes('event:done'))
+     results.push({check:'emptyEvidenceCourse',courseId:empty.id,conversationId:emptyConversation.id})
+   }
+   if (process.env.AUDIT_COURSE_ONLY !== 'true') {
    const review=await client.request(`/courses/${course.id}/reviews/documents`,'POST',{documentId:document.document.id,documentKind:'SRS',idempotencyKey:randomUUID()})
    let reviewStatus=review
    for(let n=0;n<90 && !['COMPLETED','FAILED','CANCELLED'].includes(reviewStatus.status);n++) {
@@ -155,7 +167,8 @@ try {
      results.push({check:'codeReviewAvailability',status:'BLOCKED',errorCode:crStatus.errorCode})
      process.exitCode = 2
    }
+   }
  }
  }
 }catch(error){console.error(error.message);process.exitCode=1}
-finally{await writeFile(process.env.AUDIT_DIAGNOSTICS==='true'?'target/bug-audit-diagnostics.json':process.env.AUDIT_NEGATIVE==='true'?'target/bug-audit-negative-http.json':'target/bug-audit-http.json',JSON.stringify(results,null,2))}
+finally{await writeFile(process.env.AUDIT_OUTPUT || (process.env.AUDIT_DIAGNOSTICS==='true'?'target/bug-audit-diagnostics.json':process.env.AUDIT_NEGATIVE==='true'?'target/bug-audit-negative-http.json':'target/bug-audit-http.json'),JSON.stringify(results,null,2))}

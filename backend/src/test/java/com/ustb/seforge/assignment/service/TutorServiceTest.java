@@ -92,6 +92,7 @@ class TutorServiceTest {
                 .thenReturn(new AiToolsResponse(new AiResponse("Try a smaller step", "fake", "fake", 3, 4, 55L),
                         java.util.List.of()));
         ArgumentCaptor<AiRequest> requestCaptor = ArgumentCaptor.forClass(AiRequest.class);
+        when(question.getQuestionType()).thenReturn(com.ustb.seforge.assignment.domain.QuestionType.SHORT_ANSWER);
         ArgumentCaptor<Object[]> toolsCaptor = ArgumentCaptor.forClass(Object[].class);
 
         var result = service.ask(2L, 7L,
@@ -126,6 +127,7 @@ class TutorServiceTest {
         when(assignment.getDueAt()).thenReturn(Instant.now().plusSeconds(3600));
         when(question.getId()).thenReturn(3L);
         when(question.getReferenceAnswer()).thenReturn("secret reference solution");
+        when(question.getQuestionType()).thenReturn(com.ustb.seforge.assignment.domain.QuestionType.SHORT_ANSWER);
         when(assignmentTool.load(2L, 3L, 7L)).thenReturn(new AssignmentTool.Context(assignment, question));
         when(submissionTool.current(assignment, 3L, 7L))
                 .thenReturn(new SubmissionTool.State(null, false, null));

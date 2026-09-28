@@ -86,3 +86,24 @@ backend/mysql-connector-java-5.1.49/
 # ---------- OS ----------
 .DS_Store
 Thumbs.db
+UI设计/
+
+# Keep public entry docs and reproducible verification scripts; local reports,
+# spreadsheets and generated run evidence stay out of the GitHub repository.
+/docs/**
+!/docs/roadmap.md
+!/docs/operations.md
+!/docs/ai-agent-design.md
+!/docs/load-test/
+!/docs/load-test/README.md
+!/docs/load-test/mixed-load.js
+!/docs/rag-evaluation/
+!/docs/rag-evaluation/README.md
+!/docs/rag-evaluation/run.mjs
+!/docs/rag-evaluation/golden-set.example.jsonl
+!/docs/release/
+!/docs/release/provider.mjs
+!/docs/release/render-tls.mjs
+!/docs/release/verify.mjs
+!/docs/release/results/
+!/docs/release/results/README.md

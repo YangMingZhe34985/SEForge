@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import PageHeader from '@/components/PageHeader.vue'
+import AdminPageHeader from '@/components/AdminPageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { adminApi } from '@/api/admin'
 import type { AuditLogEntry } from '@/types/domain'
 
 const items = ref<AuditLogEntry[]>([])
 const loading = ref(false)
+const errorMessage = ref('')
 const page = ref(1)
 const pageSize = 20
 const total = ref(0)
@@ -15,6 +15,7 @@ const filters = reactive({ action: '', outcome: '', actorId: '', from: '', to: '
 
 async function load() {
   loading.value = true
+  errorMessage.value = ''
   try {
     const result = await adminApi.auditLogs(page.value - 1, pageSize, {
       action: filters.action || undefined,
@@ -26,7 +27,7 @@ async function load() {
     items.value = result.items
     total.value = result.total
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '审计日志加载失败')
+    errorMessage.value = error instanceof Error ? error.message : '审计日志加载失败'
   } finally {
     loading.value = false
   }
@@ -57,9 +58,10 @@ onMounted(load)
 
 <template>
   <div>
-    <PageHeader title="审计日志" description="平台审计事件按时间倒序排列，可用于追溯管理操作与关键业务动作。">
-      <el-button @click="load">刷新</el-button>
-    </PageHeader>
+    <AdminPageHeader title="审计日志" kind="audit" description="平台审计事件按时间倒序排列，可用于追溯管理操作与关键业务动作。">
+      <el-button :loading="loading" @click="load">刷新</el-button>
+    </AdminPageHeader>
+    <el-alert v-if="errorMessage" class="admin-error" type="error" :closable="false" :title="errorMessage" show-icon><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
     <section class="panel" v-loading="loading">
       <div class="audit-filters"><el-input v-model="filters.action" placeholder="Action" clearable /><el-select v-model="filters.outcome" placeholder="结果" clearable><el-option label="成功" value="SUCCEEDED" /><el-option label="失败" value="FAILED" /><el-option label="拒绝" value="REJECTED" /></el-select><el-input v-model="filters.actorId" placeholder="用户 ID" clearable /><el-date-picker v-model="filters.from" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" placeholder="开始时间" /><el-date-picker v-model="filters.to" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" placeholder="结束时间" /><el-button type="primary" @click="page = 1; load()">筛选</el-button></div>
       <el-table v-if="items.length" :data="items" stripe>
@@ -68,10 +70,10 @@ onMounted(load)
         <el-table-column prop="action" label="动作" min-width="190" />
         <el-table-column label="目标" min-width="160"><template #default="scope">{{ targetOf(scope.row) }}</template></el-table-column>
         <el-table-column label="课程" width="90"><template #default="scope">{{ scope.row.courseId ? `#${scope.row.courseId}` : '—' }}</template></el-table-column>
-        <el-table-column label="结果" width="115"><template #default="scope"><el-tag :type="outcomeTag(scope.row.outcome)" effect="plain">{{ scope.row.outcome }}</el-tag></template></el-table-column>
+        <el-table-column label="结果" width="145"><template #default="scope"><el-tag :type="outcomeTag(scope.row.outcome)" effect="plain">{{ scope.row.outcome }}</el-tag></template></el-table-column>
         <el-table-column label="Trace ID" min-width="230" show-overflow-tooltip><template #default="scope"><code class="trace">{{ scope.row.traceId }}</code></template></el-table-column>
       </el-table>
-      <EmptyState v-else title="暂无审计事件" />
+      <EmptyState v-else-if="!loading && !errorMessage" title="暂无审计事件" description="尝试调整筛选条件，或在管理操作后刷新列表。" />
       <el-pagination
         v-if="total > pageSize"
         v-model:current-page="page"
@@ -89,6 +91,6 @@ onMounted(load)
 <style scoped>
 .trace { color: var(--muted); font-size: 12px; }
 .audit-pagination { justify-content: flex-end; margin-top: 16px; }
-.audit-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-.audit-filters > * { min-width: 120px; max-width: 200px; }
+.audit-filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+.audit-filters > * { flex: 1 1 150px; min-width: 0; max-width: 240px; }
 </style>

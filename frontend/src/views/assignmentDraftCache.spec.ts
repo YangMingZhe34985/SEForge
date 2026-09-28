@@ -23,4 +23,11 @@ describe('assignment draft recovery', () => {
     forgetSubmissionKey('student-1', 'assignment-1')
     expect(submissionKey('student-1', 'assignment-1')).not.toBe(first)
   })
+
+  it('preserves pending Markdown and media IDs together across reload', () => {
+    const answer = { questionId: 'q-2', answer: { text: '# Final design edit', assetIds: ['31', '32'] } }
+    rememberDraft('student-1', 'assignment-1', [answer])
+    expect(recoverDraft('student-1', 'assignment-1')).toEqual([answer])
+    expect(recoverDraft('student-2', 'assignment-1')).toBeNull()
+  })
 })

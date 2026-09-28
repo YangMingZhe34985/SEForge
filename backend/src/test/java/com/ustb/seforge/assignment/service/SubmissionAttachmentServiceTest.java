@@ -57,7 +57,7 @@ class SubmissionAttachmentServiceTest {
         storage = mock(ObjectStorage.class);
         properties = new SEForgeProperties();
         service = new SubmissionAttachmentService(submissions, questions, answers, users, courses, storage,
-                new SecureArchiveValidator(), properties);
+                new SecureArchiveValidator(), properties, mock(com.ustb.seforge.assignment.repository.AssignmentMediaRepository.class));
     }
 
     @Test

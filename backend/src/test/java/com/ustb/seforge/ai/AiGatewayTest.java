@@ -176,6 +176,29 @@ class AiGatewayTest {
     }
 
     @Test
+    void streamedStructuredOutputUsesDirectJsonAndRejectsUnknownIdentityFields() {
+        var streaming = mock(StreamingChatModel.class);
+        var timeout = java.time.Duration.ofSeconds(2);
+        when(router.streamingCandidates(ModelCapability.REASONING, timeout)).thenReturn(List.of(endpoint("stream", mock(ChatModel.class), streaming)));
+        AtomicReference<String> body = new AtomicReference<>("{\"answer\":\"valid\"}");
+        doAnswer(call -> { ((StreamingChatResponseHandler)call.getArgument(1)).onCompleteResponse(response(body.get())); return null; })
+                .when(streaming).chat(any(ChatRequest.class), any(StreamingChatResponseHandler.class));
+        assertThat(gateway.completeJsonStreaming(request, timeout, StructuredAnswer.class, value -> {}).answer()).isEqualTo("valid");
+        body.set("{\"answer\":\"valid\",\"userId\":999}");
+        assertThatThrownBy(() -> gateway.completeJsonStreaming(request, timeout, StructuredAnswer.class, value -> {}))
+                .isInstanceOf(AiUnavailableException.class).hasMessageContaining("invalid structured");
+    }
+
+    @Test
+    void streamedStructuredTimeoutTerminatesWithoutReturningPartialJson() {
+        var timeout = java.time.Duration.ofMillis(40);
+        var streaming = mock(StreamingChatModel.class);
+        when(router.streamingCandidates(ModelCapability.REASONING, timeout)).thenReturn(List.of(endpoint("silent", mock(ChatModel.class), streaming)));
+        assertThatThrownBy(() -> gateway.completeJsonStreaming(request, timeout, StructuredAnswer.class, value -> {}))
+                .isInstanceOf(AiUnavailableException.class).hasRootCauseInstanceOf(java.util.concurrent.TimeoutException.class);
+    }
+
+    @Test
     void structuredAiServiceFallsBackAndValidatesDecodedTarget() {
         ScriptedChatModel primary = new ScriptedChatModel("not-json");
         ScriptedChatModel fallback = new ScriptedChatModel(
@@ -257,6 +280,24 @@ class AiGatewayTest {
         verify(traces).fail(org.mockito.ArgumentMatchers.eq(1L),
                 org.mockito.ArgumentMatchers.isA(CancellationException.class),
                 org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void scopedDeadlineDoesNotUseShorterGlobalDeadline() throws Exception {
+        var callback=new AtomicReference<StreamingChatResponseHandler>();
+        StreamingChatModel model=new StreamingChatModel(){
+            @Override public void doChat(ChatRequest req,StreamingChatResponseHandler handler){callback.set(handler);}
+        };
+        var timeout=java.time.Duration.ofSeconds(2);
+        when(router.timeout()).thenReturn(java.time.Duration.ofMillis(5));
+        when(router.streamingCandidates(ModelCapability.REASONING,timeout)).thenReturn(List.of(endpoint("slow",mock(ChatModel.class),model)));
+        var result=new java.util.concurrent.CompletableFuture<AiResponse>();
+        var handle=gateway.stream(request,timeout,ignored->{},result::complete,result::completeExceptionally);
+        Thread.sleep(50);
+        assertThat(result).isNotCompleted();
+        callback.get().onCompleteResponse(response("complete"));
+        assertThat(result.get(1,java.util.concurrent.TimeUnit.SECONDS).text()).isEqualTo("complete");
+        assertThat(handle.terminalState()).isEqualTo(com.ustb.seforge.ai.application.AiStreamHandle.TerminalState.DONE);
     }
 
     @Test

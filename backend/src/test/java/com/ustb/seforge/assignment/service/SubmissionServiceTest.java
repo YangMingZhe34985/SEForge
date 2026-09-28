@@ -42,7 +42,7 @@ class SubmissionServiceTest {
         TutorPolicyCodec policies = mock(TutorPolicyCodec.class);
         SubmissionService service = new SubmissionService(assignments, questions, submissions,
                 answers, authorization, policies, new ObjectMapper(),
-                new SubmissionCompletenessValidator(new ObjectMapper()));
+                new SubmissionCompletenessValidator(new ObjectMapper()), mock(AssignmentMediaService.class), mock(org.springframework.context.ApplicationEventPublisher.class));
 
         Assignment assignment = mock(Assignment.class);
         when(assignment.getId()).thenReturn(1L);
@@ -93,7 +93,7 @@ class SubmissionServiceTest {
         ObjectMapper objectMapper = new ObjectMapper();
         SubmissionService service = new SubmissionService(assignments, questions, submissions,
                 answers, authorization, policies, objectMapper,
-                new SubmissionCompletenessValidator(objectMapper));
+                new SubmissionCompletenessValidator(objectMapper), mock(AssignmentMediaService.class), mock(org.springframework.context.ApplicationEventPublisher.class));
 
         Assignment assignment = mock(Assignment.class);
         when(assignment.getId()).thenReturn(1L);
@@ -128,7 +128,7 @@ class SubmissionServiceTest {
         ObjectMapper mapper = new ObjectMapper();
         SubmissionService service = new SubmissionService(assignments, mock(AssignmentQuestionRepository.class),
                 submissions, mock(SubmissionAnswerRepository.class), authorization, policies, mapper,
-                new SubmissionCompletenessValidator(mapper));
+                new SubmissionCompletenessValidator(mapper), mock(AssignmentMediaService.class), mock(org.springframework.context.ApplicationEventPublisher.class));
         Assignment assignment = mock(Assignment.class);
         when(assignment.getId()).thenReturn(1L);
         when(assignment.getStatus()).thenReturn(AssignmentStatus.PUBLISHED);

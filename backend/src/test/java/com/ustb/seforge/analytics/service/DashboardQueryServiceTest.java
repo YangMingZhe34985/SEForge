@@ -37,9 +37,9 @@ class DashboardQueryServiceTest {
         jdbc.update("INSERT INTO submission VALUES (200,100,1,NULL,10,'SUBMITTED')");
         jdbc.update("INSERT INTO grade VALUES (300,200,1,'CONFIRMED',80)");
         jdbc.update("INSERT INTO knowledge_points VALUES (400,1,'Transactions')");
-        jdbc.update("INSERT INTO assignment_question VALUES (500,100,400)");
+        jdbc.update("INSERT INTO assignment_question VALUES (500,100,400,1,200)");
         jdbc.update("INSERT INTO rubric_item VALUES (600,500,10)");
-        jdbc.update("INSERT INTO feedback VALUES (700,300,600,8)");
+        jdbc.update("INSERT INTO feedback VALUES (700,300,600,8,NULL)");
         jdbc.update("INSERT INTO conversation VALUES (800,1,10)");
         jdbc.update("INSERT INTO conversation_message VALUES (900,800,1,'USER','What is ACID?','COMPLETE')");
         jdbc.update("INSERT INTO tutor_interaction VALUES (1000,1,10,'HINT','COMPLETED')");
@@ -131,9 +131,9 @@ class DashboardQueryServiceTest {
         jdbc.execute("CREATE TABLE grade(id BIGINT PRIMARY KEY,submission_id BIGINT,course_id BIGINT,status VARCHAR(24),final_score DECIMAL(10,2))");
         jdbc.execute("CREATE TABLE rubric(id BIGINT PRIMARY KEY,assignment_id BIGINT,total_score DECIMAL(10,2))");
         jdbc.execute("CREATE TABLE knowledge_points(id BIGINT PRIMARY KEY,course_id BIGINT,title VARCHAR(160))");
-        jdbc.execute("CREATE TABLE assignment_question(id BIGINT PRIMARY KEY,assignment_id BIGINT,knowledge_point_id BIGINT)");
+        jdbc.execute("CREATE TABLE assignment_question(id BIGINT PRIMARY KEY,assignment_id BIGINT,knowledge_point_id BIGINT,course_id BIGINT,max_score DECIMAL(10,2))");
         jdbc.execute("CREATE TABLE rubric_item(id BIGINT PRIMARY KEY,question_id BIGINT,max_score DECIMAL(10,2))");
-        jdbc.execute("CREATE TABLE feedback(id BIGINT PRIMARY KEY,grade_id BIGINT,rubric_item_id BIGINT,final_score DECIMAL(10,2))");
+        jdbc.execute("CREATE TABLE feedback(id BIGINT PRIMARY KEY,grade_id BIGINT,rubric_item_id BIGINT,final_score DECIMAL(10,2),question_id BIGINT)");
         jdbc.execute("CREATE TABLE conversation(id BIGINT PRIMARY KEY,course_id BIGINT,owner_id BIGINT)");
         jdbc.execute("CREATE TABLE conversation_message(id BIGINT PRIMARY KEY,conversation_id BIGINT,course_id BIGINT,role VARCHAR(24),content CLOB,status VARCHAR(24))");
         jdbc.execute("CREATE TABLE tutor_interaction(id BIGINT PRIMARY KEY,course_id BIGINT,user_id BIGINT,operation VARCHAR(32),status VARCHAR(24))");

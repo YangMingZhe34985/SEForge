@@ -102,9 +102,10 @@ export const courseApi = {
   resources: (courseId: string) => apiRequest<CourseResource[]>({ url: `/courses/${courseId}/resources` }),
   createResource: (courseId: string, input: CreateResourceInput) =>
     apiRequest<CourseResource>({ url: `/courses/${courseId}/resources`, method: 'POST', data: input }),
-  uploadResource: (courseId: string, file: File, chapterId?: string) => {
+  uploadResource: (courseId: string, file: File, chapterId?: string, includeInKnowledge?: boolean) => {
     const data = new FormData()
     data.append('file', file)
+    if (includeInKnowledge !== undefined) data.append('includeInKnowledge', String(includeInKnowledge))
     if (chapterId) data.append('chapterId', chapterId)
     return apiRequest<CourseResource>({ url: `/courses/${courseId}/resources/upload`, method: 'POST', data })
   },

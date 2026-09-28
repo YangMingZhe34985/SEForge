@@ -54,6 +54,7 @@ class KnowledgeDocumentServiceTest {
     private AuditService audit;
     private KnowledgeDocumentService service;
     private SEForgeProperties properties;
+    private com.ustb.seforge.course.repository.CourseResourceRepository resources;
 
     @BeforeEach
     void setUp() {
@@ -69,8 +70,10 @@ class KnowledgeDocumentServiceTest {
         jobs = mock(AsyncJobService.class);
         audit = mock(AuditService.class);
         properties = new SEForgeProperties();
+        resources = mock(com.ustb.seforge.course.repository.CourseResourceRepository.class);
+        when(resources.save(any())).thenAnswer(i -> { var row=(com.ustb.seforge.course.domain.CourseResource)i.getArgument(0); ReflectionTestUtils.setField(row,"id",72L); return row; });
         service = new KnowledgeDocumentService(documents, courses, chapters, chunks, ingestions, access,
-                storage, vectors, versions, jobs, properties, audit);
+                storage, vectors, versions, jobs, properties, audit, resources);
     }
 
     @Test
@@ -79,7 +82,7 @@ class KnowledgeDocumentServiceTest {
         when(chapters.findById(42L)).thenReturn(Optional.of(foreignChapter));
         KnowledgeDocument duplicate = new KnowledgeDocument(10L, null, 7L, "notes.md", "old/key",
                 "text/markdown", 5L, "checksum", "parser", "embedding", "chunking");
-        when(documents.findByCourseIdAndChecksum(eq(10L), anyString())).thenReturn(Optional.of(duplicate));
+        when(documents.findFirstByCourseIdAndChapterIdAndChecksumOrderByIdDesc(eq(10L), eq(42L), anyString())).thenReturn(Optional.of(duplicate));
 
         assertThatThrownBy(() -> service.upload(10L, 42L, 7L, markdown()))
                 .isInstanceOfSatisfying(AppException.class, exception -> {
@@ -109,7 +112,7 @@ class KnowledgeDocumentServiceTest {
         when(chapters.findById(42L)).thenReturn(Optional.of(chapter));
         KnowledgeDocument duplicate = new KnowledgeDocument(10L, 42L, 7L, "notes.md", "old/key",
                 "text/markdown", 5L, "checksum", "parser", "embedding", "chunking");
-        when(documents.findByCourseIdAndChecksum(eq(10L), anyString())).thenReturn(Optional.of(duplicate));
+        when(documents.findFirstByCourseIdAndChapterIdAndChecksumOrderByIdDesc(eq(10L), eq(42L), anyString())).thenReturn(Optional.of(duplicate));
 
         var result = service.upload(10L, 42L, 7L, markdown());
 
@@ -122,7 +125,7 @@ class KnowledgeDocumentServiceTest {
     @Test
     void recordsSuccessfulCourseResourceUpload() {
         properties.getStorage().setCourseQuotaBytes(10L);
-        when(documents.sumStoredBytesByCourseId(10L)).thenReturn(5L);
+        when(resources.sumStoredBytes(10L)).thenReturn(5L);
         when(courses.findForUpdate(10L)).thenReturn(Optional.of(
                 new Course("SE101", "Software Engineering", null, 3L, 7L)));
         when(versions.writeVersion()).thenReturn("embedding-v1");
@@ -150,7 +153,7 @@ class KnowledgeDocumentServiceTest {
         properties.getStorage().setCourseQuotaBytes(10L);
         when(courses.findForUpdate(10L)).thenReturn(Optional.of(
                 new Course("SE101", "Software Engineering", null, 3L, 7L)));
-        when(documents.sumStoredBytesByCourseId(10L)).thenReturn(6L);
+        when(resources.sumStoredBytes(10L)).thenReturn(6L);
 
         assertThatThrownBy(() -> service.upload(10L, null, 7L, markdown()))
                 .isInstanceOfSatisfying(AppException.class, exception -> {

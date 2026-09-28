@@ -12,7 +12,7 @@ import java.util.Map;
 
 public record UpsertQuestionRequest(
         @NotNull QuestionType type,
-        @NotBlank @Size(max = 100_000) String prompt,
+        @NotNull @Size(max = 100_000) String prompt,
         List<@Size(max = 10_000) String> options,
         @Size(max = 100_000) String referenceAnswer,
         @NotNull @DecimalMin(value = "0.01") BigDecimal points,

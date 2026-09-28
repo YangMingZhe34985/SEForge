@@ -45,6 +45,7 @@ public class SubmissionAttachmentService {
     private final ObjectStorage storage;
     private final SecureArchiveValidator archiveValidator;
     private final SEForgeProperties properties;
+    private final com.ustb.seforge.assignment.repository.AssignmentMediaRepository media;
 
     public SubmissionAttachmentService(SubmissionService submissions,
                                        AssignmentQuestionRepository questions,
@@ -53,7 +54,8 @@ public class SubmissionAttachmentService {
                                        CourseRepository courses,
                                        ObjectStorage storage,
                                        SecureArchiveValidator archiveValidator,
-                                       SEForgeProperties properties) {
+                                       SEForgeProperties properties,
+                                       com.ustb.seforge.assignment.repository.AssignmentMediaRepository media) {
         this.submissions = submissions;
         this.questions = questions;
         this.answers = answers;
@@ -62,6 +64,7 @@ public class SubmissionAttachmentService {
         this.storage = storage;
         this.archiveValidator = archiveValidator;
         this.properties = properties;
+        this.media=media;
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -146,12 +149,12 @@ public class SubmissionAttachmentService {
 
     private void requireWithinQuota(Long courseId, Long userId, long incomingBytes,
                                     long replacedBytes) {
-        long userBytes = answers.sumAttachmentBytesByUserId(userId);
+        long userBytes = answers.sumAttachmentBytesByUserId(userId)+media.bytesByOwner(userId);
         if (wouldExceed(properties.getStorage().getAttachmentUserQuotaBytes(), userBytes,
                 replacedBytes, incomingBytes)) {
             throw malformed("User attachment storage quota would be exceeded");
         }
-        long courseBytes = answers.sumAttachmentBytesByCourseId(courseId);
+        long courseBytes = answers.sumAttachmentBytesByCourseId(courseId)+media.bytesByCourse(courseId);
         if (wouldExceed(properties.getStorage().getAttachmentCourseQuotaBytes(), courseBytes,
                 replacedBytes, incomingBytes)) {
             throw malformed("Course attachment storage quota would be exceeded");

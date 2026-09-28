@@ -64,8 +64,11 @@ class PhaseFiveReviewIntegrationTest {
         r.add("spring.data.redis.password", () -> "");
         r.add("seforge.jobs.enabled", () -> true); r.add("seforge.jobs.lease-duration", () -> "3s");
         r.add("seforge.ai.enabled", () -> true); r.add("seforge.ai.deepseek-api-key", () -> "phase5-stub-not-a-real-key");
-        r.add("seforge.ai.deepseek-base-url", PROVIDER::url); r.add("seforge.ai.dashscope-api-key", () -> "");
+        r.add("seforge.ai.deepseek-base-url", PROVIDER::url); r.add("seforge.ai.dashscope-api-key", () -> "phase5-stub-not-a-real-key");
+        r.add("seforge.ai.dashscope-base-url", PROVIDER::url);
+        r.add("seforge.ai.fallback-model", () -> ""); // Vision is independent; preserve the original single text provider.
         r.add("seforge.ai.timeout", () -> "90s"); r.add("seforge.ai.max-retries", () -> 0);
+        r.add("seforge.ai.vision-model", () -> "vision-only");
         r.add("seforge.storage.endpoint", () -> "http://" + MINIO.getHost() + ":" + MINIO.getMappedPort(9000));
         r.add("seforge.storage.access-key", () -> "phase5-test"); r.add("seforge.storage.secret-key", () -> "phase5-test-only-password");
         r.add("seforge.storage.bucket", () -> "phase5");
@@ -105,7 +108,7 @@ class PhaseFiveReviewIntegrationTest {
         peerSession = login("P5-20260002", "STUDENT"); outsiderSession = login("p5outsider", "TEACHER"); taSession = login("p5ta", "TEACHER");
         assignment = data(send(teacherSession, "POST", "/api/v1/courses/501/assignments", Map.of("title", "Review assignment", "maxAttempts", 3))).path("id").asLong();
         String path = "/api/v1/assignments/" + assignment;
-        question = data(send(teacherSession, "POST", path + "/questions", Map.of("type", "CODE", "prompt", "Explain and implement cohesion", "points", 10, "orderIndex", 0))).path("id").asLong();
+        question = data(send(teacherSession, "POST", path + "/questions", Map.of("type", "SHORT_ANSWER", "prompt", "Explain cohesion", "points", 10, "orderIndex", 0))).path("id").asLong();
         data(send(teacherSession, "PUT", path + "/rubric", Map.of("title", "Review rubric", "totalScore", 10, "status", "DRAFT")));
         for (int i = 0; i < 2; i++) rubricIds.add(data(send(teacherSession, "POST", path + "/rubric/items", Map.of("title", "Criterion " + i, "maxScore", 5, "orderIndex", i))).path("id").asLong());
         data(send(teacherSession, "PUT", path + "/rubric", Map.of("title", "Review rubric", "totalScore", 10, "status", "PUBLISHED")));
@@ -124,10 +127,11 @@ class PhaseFiveReviewIntegrationTest {
     }
 
     @Test @Order(1) void documentKindsWorkerAndIdempotencyAreStrict() throws Exception {
-        long resource = jdbc.queryForObject("select id from course_resources where course_id=501", Long.class);
-        assertThat(send(teacherSession, "POST", reviews(501) + "/documents", Map.of("resourceId", resource, "documentKind", "IGNORE_SECURITY")).statusCode()).isEqualTo(400);
+        long resource = jdbc.queryForObject("select id from review_artifact where course_id=501", Long.class);
+        assertThat(send(teacherSession, "POST", reviews(502) + "/documents", Map.of("artifactId", resource, "documentKind", "SRS")).statusCode()).isEqualTo(404);
+        assertThat(send(teacherSession, "POST", reviews(501) + "/documents", Map.of("artifactId", resource, "documentKind", "IGNORE_SECURITY")).statusCode()).isEqualTo(400);
         for (String kind : List.of("SRS", "DESIGN", "TEST_REPORT", "README", "API")) {
-            Map<String,Object> request = Map.of("resourceId", resource, "documentKind", kind, "idempotencyKey", "doc-" + kind);
+            Map<String,Object> request = Map.of("artifactId", resource, "documentKind", kind, "idempotencyKey", "doc-" + kind);
             JsonNode review = data(send(teacherSession, "POST", reviews(501) + "/documents", request));
             assertThat(data(send(teacherSession, "POST", reviews(501) + "/documents", request)).path("id").asLong()).isEqualTo(review.path("id").asLong());
             finish(review, JobStatus.COMPLETED);
@@ -146,10 +150,10 @@ class PhaseFiveReviewIntegrationTest {
     @Test @Order(2) void invalidStructuredResultsDeadLetterAndManualRetryHasOneReport() throws Exception {
         assertThatThrownBy(() -> gradeSuggestions.applySuggestion(submission, 501L, student, java.math.BigDecimal.ZERO,
                 "invalid-fixture", "test", List.of())).isInstanceOf(com.ustb.seforge.common.exception.AppException.class);
-        assertThat(jdbc.queryForObject("select count(*) from grade where submission_id=?", Integer.class, submission)).isZero();
-        long resource = jdbc.queryForObject("select id from course_resources where course_id=501", Long.class);
+        assertUnscoredWaitingGrade();
+        long resource = jdbc.queryForObject("select id from review_artifact where course_id=501", Long.class);
         PROVIDER.override = "{\"summary\":\"missing dimensions\"}";
-        JsonNode bad = data(send(teacherSession, "POST", reviews(501) + "/documents", Map.of("resourceId", resource, "documentKind", "SRS")));
+        JsonNode bad = data(send(teacherSession, "POST", reviews(501) + "/documents", Map.of("artifactId", resource, "documentKind", "SRS")));
         finish(bad, JobStatus.DEAD_LETTER); assertThat(countReports(bad)).isZero();
         PROVIDER.override = null;
         JsonNode retry = data(send(teacherSession, "POST", reviews(501) + "/" + bad.path("id").asLong() + "/retry", Map.of()));
@@ -165,7 +169,7 @@ class PhaseFiveReviewIntegrationTest {
             PROVIDER.override = json.writeValueAsString(invalid);
             JsonNode review = assignmentReview(); finish(review, JobStatus.DEAD_LETTER);
             assertThat(countReports(review)).isZero();
-            assertThat(jdbc.queryForObject("select count(*) from grade where submission_id=?", Integer.class, submission)).isZero();
+            assertUnscoredWaitingGrade();
         }
         PROVIDER.override = null;
     }
@@ -193,8 +197,11 @@ class PhaseFiveReviewIntegrationTest {
             var second = threads.submit(() -> send(teacherSession, "POST", gradePath + "/confirm", confirmation));
             assertThat(List.of(first.get().statusCode(), second.get().statusCode())).containsExactlyInAnyOrder(200, 409);
         } finally { threads.shutdownNow(); }
-        JsonNode grade = data(send(studentSession, "GET", gradePath, null));
-        assertThat(grade.path("status").asText()).isEqualTo("FINAL");
+        assertThat(send(studentSession,"GET",gradePath,null).statusCode()).isEqualTo(404);
+        data(send(teacherSession,"POST",gradePath+"/publish",null));
+        data(send(studentSession,"GET",gradePath,null));
+        JsonNode grade = data(send(teacherSession, "GET", gradePath, null));
+        assertThat(grade.path("status").asText()).isEqualTo("PUBLISHED");
         assertThat(grade.path("score").asInt()).isEqualTo(10); assertThat(grade.path("aiSuggestedScore").asInt()).isEqualTo(8);
         assertThat(grade.path("graderId").asLong()).isEqualTo(teacher); assertThat(grade.path("aiTraceId").asLong()).isPositive();
         assertThat(grade.path("overrideReason").asText()).contains("Verified evidence");
@@ -228,9 +235,9 @@ class PhaseFiveReviewIntegrationTest {
     }
 
     @Test @Order(5) void killedReviewWorkerRecoversLeaseAndCommitsOneReport() throws Exception {
-        long resource = jdbc.queryForObject("select id from course_resources where course_id=501", Long.class);
+        long resource = jdbc.queryForObject("select id from review_artifact where course_id=501", Long.class);
         PROVIDER.delayMillis = 60_000;
-        JsonNode review = data(send(teacherSession, "POST", reviews(501) + "/documents", Map.of("resourceId", resource, "documentKind", "SRS")));
+        JsonNode review = data(send(teacherSession, "POST", reviews(501) + "/documents", Map.of("artifactId", resource, "documentKind", "SRS")));
         long id = review.path("asyncJobId").asLong(); int before = PROVIDER.calls.get();
         startExternalWorker();
         await(() -> PROVIDER.calls.get() > before, 60);
@@ -245,8 +252,8 @@ class PhaseFiveReviewIntegrationTest {
     }
 
     @Test @Order(6) void revokedRequesterFailsBeforeHandlerAndAnotherTeacherCanRetry() throws Exception {
-        long resource = jdbc.queryForObject("select id from course_resources where course_id=501", Long.class);
-        JsonNode review = data(send(taSession, "POST", reviews(501) + "/documents", Map.of("resourceId", resource, "documentKind", "SRS")));
+        long resource = jdbc.queryForObject("select id from review_artifact where course_id=501", Long.class);
+        JsonNode review = data(send(taSession, "POST", reviews(501) + "/documents", Map.of("artifactId", resource, "documentKind", "SRS")));
         jdbc.update("delete from course_members where course_id=501 and user_id=?", ta);
         int calls = PROVIDER.calls.get();
         finish(review, JobStatus.DEAD_LETTER);
@@ -254,6 +261,153 @@ class PhaseFiveReviewIntegrationTest {
         JsonNode retry = data(send(teacherSession, "POST", reviews(501) + "/" + review.path("id").asLong() + "/retry", Map.of()));
         finish(retry, JobStatus.COMPLETED); assertThat(countReports(review)).isEqualTo(1);
         assertThat(jdbc.queryForObject("select requested_by from review_job where id=?", Long.class, review.path("id").asLong())).isEqualTo(teacher);
+    }
+
+    @Test @Order(7) void typedObjectiveQuestionsAreScoredWithoutAnyModelAndConfirmedByTeacher() throws Exception {
+        int before=PROVIDER.calls.get();
+        long id=data(send(teacherSession,"POST","/api/v1/courses/501/assignments",Map.of("title","RULE types","maxAttempts",2))).path("id").asLong();
+        String path="/api/v1/assignments/"+id;
+        List<Long> qs=new ArrayList<>(); List<Long> items=new ArrayList<>();
+        for(String type:List.of("SINGLE_CHOICE","MULTIPLE_CHOICE","TRUE_FALSE")) {
+            var payload=new LinkedHashMap<String,Object>();payload.put("type",type);payload.put("prompt","Objective question");payload.put("points",5);payload.put("orderIndex",qs.size());
+            var correct=type.equals("SINGLE_CHOICE")?(Object)"A":type.equals("MULTIPLE_CHOICE")?List.of("A","B"):false;
+            var config=new LinkedHashMap<String,Object>();config.put("schemaVersion",1);config.put("answerSpec",Map.of("correct",correct));
+            if(!type.equals("TRUE_FALSE")){payload.put("options",List.of("A","B","C"));config.put("choices",List.of(Map.of("id","A","label","Alpha"),Map.of("id","B","label","Beta"),Map.of("id","C","label","Gamma")));}
+            payload.put("config",config);qs.add(data(send(teacherSession,"POST",path+"/questions",payload)).path("id").asLong());
+        }
+        data(send(teacherSession,"PUT",path+"/rubric",Map.of("title","Rules","totalScore",15,"status","DRAFT")));
+        for(Long q:qs)items.add(data(send(teacherSession,"POST",path+"/rubric/items",Map.of("questionId",q,"title","Exact match","maxScore",5,"orderIndex",items.size()))).path("id").asLong());
+        data(send(teacherSession,"PUT",path+"/rubric",Map.of("title","Rules","totalScore",15,"status","PUBLISHED")));
+        data(send(teacherSession,"POST",path+"/transition",Map.of("status","PUBLISHED")));
+        var visible=data(send(studentSession,"GET",path,null));
+        for(var q:visible.path("questions")){assertThat(q.path("config").has("answerSpec")).isFalse();assertThat(q.hasNonNull("referenceAnswer")).isFalse();}
+        var payload=Map.of("answers",List.of(Map.of("questionId",qs.get(0),"answer","A"),Map.of("questionId",qs.get(1),"answer",List.of("B","A")),Map.of("questionId",qs.get(2),"answer",true)),"submissionKey","typed-rules-1","expectedAttempt",0);
+        long sid=data(send(studentSession,"POST",path+"/submissions",payload)).path("id").asLong();
+        assertThat(data(send(studentSession,"POST",path+"/submissions",payload)).path("id").asLong()).isEqualTo(sid);
+        assertThat(jdbc.queryForObject("select count(*) from feedback f join grade g on f.grade_id=g.id where g.submission_id=? and f.source='RULE'",Integer.class,sid)).isEqualTo(3);
+        assertThat(jdbc.queryForObject("select rule_suggested_score from grade where submission_id=?",java.math.BigDecimal.class,sid)).isEqualByComparingTo("10");
+        assertThat(jdbc.queryForObject("select ai_suggested_score from grade where submission_id=?",java.math.BigDecimal.class,sid)).isNull();
+        assertThat(send(studentSession,"GET","/api/v1/submissions/"+sid+"/grade",null).statusCode()).isEqualTo(404);
+        data(send(studentSession,"POST",path+"/tutor",Map.of("questionId",qs.getFirst(),"action","FULL_SOLUTION")));
+        var review=data(send(teacherSession,"POST",reviews(501)+"/assignments",Map.of("submissionId",sid)));
+        finish(review,JobStatus.COMPLETED);
+        assertThat(PROVIDER.calls.get()).isEqualTo(before);
+        var confirm=Map.of("score",10,"rubricItems",List.of(Map.of("rubricItemId",items.get(0),"score",5),Map.of("rubricItemId",items.get(1),"score",5),Map.of("rubricItemId",items.get(2),"score",0)));
+        data(send(teacherSession,"POST","/api/v1/submissions/"+sid+"/grade/confirm",confirm));
+        data(send(teacherSession,"POST","/api/v1/submissions/"+sid+"/grade/publish",null));
+        assertThat(data(send(studentSession,"GET","/api/v1/submissions/"+sid+"/grade",null)).path("score").asInt()).isEqualTo(10);
+    }
+
+    @Test @Order(8) void imageAnswersAndMixedGradingUseAuthorizedMediaAndRealHttpRuntime() throws Exception {
+        long id=data(send(teacherSession,"POST","/api/v1/courses/501/assignments",Map.of("title","Image design + rule","maxAttempts",2))).path("id").asLong();
+        String path="/api/v1/assignments/"+id;
+        byte[] image=diagram();
+        long promptImage=data(upload(teacherSession,path+"/media",Map.of("purpose","CONTENT"),"diagram.png","image/png",image)).path("id").asLong();
+        long reference=data(upload(teacherSession,path+"/media",Map.of("purpose","REFERENCE"),"answer.png","image/png",image)).path("id").asLong();
+        long subjective=data(send(teacherSession,"POST",path+"/questions",Map.of("type","DESIGN","prompt","Explain the architecture **diagram**","points",5,"orderIndex",0,"referenceAnswer","Teacher-only design rationale",
+                "config",Map.of("schemaVersion",1,"assetIds",List.of(promptImage),"answerSpec",Map.of("assetIds",List.of(reference)))))).path("id").asLong();
+        long objective=data(send(teacherSession,"POST",path+"/questions",Map.of("type","TRUE_FALSE","prompt","PRIVATE_OBJECTIVE_NOT_FOR_MODEL","points",5,"orderIndex",1,
+                "config",Map.of("schemaVersion",1,"answerSpec",Map.of("correct",true))))).path("id").asLong();
+        data(send(teacherSession,"PUT",path+"/rubric",Map.of("title","Mixed","totalScore",10,"status","DRAFT")));
+        long si=data(send(teacherSession,"POST",path+"/rubric/items",Map.of("questionId",subjective,"title","Design quality","maxScore",5,"orderIndex",0))).path("id").asLong();
+        long oi=data(send(teacherSession,"POST",path+"/rubric/items",Map.of("questionId",objective,"title","Boolean exact","maxScore",5,"orderIndex",1))).path("id").asLong();
+        data(send(teacherSession,"PUT",path+"/rubric",Map.of("title","Mixed","totalScore",10,"status","PUBLISHED")));
+        data(send(teacherSession,"POST",path+"/transition",Map.of("status","PUBLISHED")));
+        assertThat(send(studentSession,"GET",path+"/media/"+reference,null).statusCode()).isEqualTo(404);
+        assertThat(send(studentSession,"GET",path+"/media/"+promptImage,null).statusCode()).isEqualTo(200);
+        assertThat(send(outsiderSession,"GET",path+"/media/"+promptImage,null).statusCode()).isEqualTo(403);
+        long other=data(send(teacherSession,"POST","/api/v1/courses/502/assignments",Map.of("title","Different course"))).path("id").asLong();
+        assertThat(send(teacherSession,"POST","/api/v1/assignments/"+other+"/questions",Map.of("type","DESIGN","prompt","Cross-course asset","points",5,"orderIndex",0,
+                "config",Map.of("schemaVersion",1,"assetIds",List.of(promptImage)))).statusCode()).isEqualTo(404);
+        assertThat(upload(studentSession,path+"/media",Map.of("purpose","ANSWER","questionId",subjective,"expectedAttempt",0),"fake.jpg","image/jpeg",image).statusCode()).isEqualTo(400);
+        assertThat(upload(studentSession,path+"/media",Map.of("purpose","ANSWER","questionId",subjective,"expectedAttempt",0),"evil.png","image/png","not an image".getBytes()).statusCode()).isEqualTo(400);
+        var uploaded=data(upload(studentSession,path+"/media",Map.of("purpose","ANSWER","questionId",subjective,"expectedAttempt",0),"student.png","image/png",image));
+        long asset=uploaded.path("id").asLong();
+        assertThat(send(peerSession,"GET",path+"/media/"+asset,null).statusCode()).isEqualTo(404);
+        assertThat(send(teacherSession,"GET",path+"/media/"+asset,null).statusCode()).isEqualTo(200);
+        var bytes=studentSession.client().send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+path+"/media/"+asset+"/download")).GET().build(),HttpResponse.BodyHandlers.ofByteArray());
+        assertThat(bytes.statusCode()).isEqualTo(200);assertThat(bytes.body()).isEqualTo(image);
+        var badAnswer=Map.of("answers",List.of(Map.of("questionId",subjective,"answer",Map.of("text","stolen","assetIds",List.of(asset)))));
+        assertThat(send(peerSession,"PUT",path+"/submissions/draft",badAnswer).statusCode()).isEqualTo(404);
+        assertThat(send(studentSession,"PUT",path+"/submissions/draft",Map.of("answers",List.of(Map.of("questionId",subjective,"answer",Map.of("text","override scope","assetIds",List.of(asset),"userId",peer))))).statusCode()).isEqualTo(400);
+        var valid=Map.of("answers",List.of(Map.of("questionId",subjective,"answer",Map.of("text","Controller delegates to Service, which uses Repository; diagram illustrates these responsibilities.","assetIds",List.of(asset))),Map.of("questionId",objective,"answer",true)),"expectedAttempt",1,"submissionKey","mixed-1");
+        long sid=data(send(studentSession,"POST",path+"/submissions",valid)).path("id").asLong();
+        assertThat(upload(studentSession,path+"/media",Map.of("purpose","ANSWER","questionId",subjective,"expectedAttempt",1),"late.png","image/png",image).statusCode()).isEqualTo(409);
+        int imagesBefore=PROVIDER.imageCalls.get();
+        var review=data(send(teacherSession,"POST",reviews(501)+"/assignments",Map.of("submissionId",sid)));
+        finish(review,JobStatus.COMPLETED);
+        assertThat(PROVIDER.imageCalls.get()-imagesBefore).isEqualTo(3);
+        assertThat(PROVIDER.lastAssignment.toString()).doesNotContain("PRIVATE_OBJECTIVE_NOT_FOR_MODEL");
+        assertThat(PROVIDER.lastAssignment.path("questions")).hasSize(1);
+        var report=data(send(teacherSession,"GET",reviews(501)+"/"+review.path("id").asLong()+"/report",null));
+        assertThat(report.path("result").path("totalSuggestedScore").asInt()).isEqualTo(9);
+        assertThat(report.path("result").path("normalizedEvidence").toString()).contains("VISION","authoritative","false");
+        assertThat(send(studentSession,"GET","/api/v1/submissions/"+sid+"/grade",null).statusCode()).isEqualTo(404);
+        data(send(teacherSession,"POST","/api/v1/submissions/"+sid+"/grade/confirm",Map.of("score",9,"rubricItems",List.of(Map.of("rubricItemId",si,"score",4),Map.of("rubricItemId",oi,"score",5)))));
+        data(send(teacherSession,"POST","/api/v1/submissions/"+sid+"/grade/publish",null));
+        assertThat(data(send(studentSession,"GET","/api/v1/submissions/"+sid+"/grade",null)).path("status").asText()).isEqualTo("PUBLISHED");
+        assertThat(jdbc.queryForObject("select count(*) from submission_answer where submission_id=?",Integer.class,sid)).isEqualTo(2);
+        // New boundary: the same question answered with an image alone is explicitly MANUAL.
+        long peerAsset=data(upload(peerSession,path+"/media",Map.of("purpose","ANSWER","questionId",subjective,"expectedAttempt",0),"peer.png","image/png",image)).path("id").asLong();
+        long peerSubmission=data(send(peerSession,"POST",path+"/submissions",Map.of("answers",List.of(Map.of("questionId",subjective,"answer",Map.of("text","","assetIds",List.of(peerAsset))),Map.of("questionId",objective,"answer",true)),"expectedAttempt",1,"submissionKey","manual-image-1"))).path("id").asLong();
+        int callsBefore=PROVIDER.calls.get();
+        var manualReview=data(send(teacherSession,"POST",reviews(501)+"/assignments",Map.of("submissionId",peerSubmission)));
+        finish(manualReview,JobStatus.COMPLETED);
+        assertThat(PROVIDER.calls.get()).isEqualTo(callsBefore);
+        var manualResult=data(send(teacherSession,"GET",reviews(501)+"/"+manualReview.path("id").asLong()+"/report",null)).path("result");
+        assertThat(manualResult.path("manualRubricItemIds").get(0).asLong()).isEqualTo(si);
+        assertThat(manualResult.path("rubricItems")).hasSize(1);
+        data(send(teacherSession,"POST","/api/v1/submissions/"+peerSubmission+"/grade/confirm",Map.of("score",9,"rubricItems",List.of(Map.of("rubricItemId",si,"score",4),Map.of("rubricItemId",oi,"score",5)))));
+        assertThat(PROVIDER.calls.get()).isEqualTo(callsBefore);
+    }
+
+    @Test @Order(9) void reportAndCodeQuestionsEnterTheirSpecializedReviewPipelines() throws Exception {
+        long id=data(send(teacherSession,"POST","/api/v1/courses/501/assignments",Map.of("title","Report and code","maxAttempts",1))).path("id").asLong();
+        String path="/api/v1/assignments/"+id;
+        long doc=data(send(teacherSession,"POST",path+"/questions",Map.of("type","DOCUMENT_REPORT","prompt","Write a test report","points",5,"orderIndex",0,"config",Map.of("schemaVersion",1,"answerSpec",Map.of("allowedFileTypes",List.of("md")))))).path("id").asLong();
+        long code=data(send(teacherSession,"POST",path+"/questions",Map.of("type","CODE","prompt","Implement a function","points",5,"orderIndex",1,"config",Map.of("schemaVersion",1,"language","Python")))).path("id").asLong();
+        data(send(teacherSession,"PUT",path+"/rubric",Map.of("title","Specialized","totalScore",10,"status","DRAFT")));
+        for(Long q:List.of(doc,code))data(send(teacherSession,"POST",path+"/rubric/items",Map.of("questionId",q,"title","Quality","maxScore",5,"orderIndex",0)));
+        data(send(teacherSession,"PUT",path+"/rubric",Map.of("title","Specialized","totalScore",10,"status","PUBLISHED")));
+        data(send(teacherSession,"POST",path+"/transition",Map.of("status","PUBLISHED")));
+        assertThat(upload(studentSession,path+"/media",Map.of("purpose","ANSWER","questionId",doc,"expectedAttempt",0),"bad.txt","text/plain","text".getBytes()).statusCode()).isEqualTo(400);
+        long file=data(upload(studentSession,path+"/media",Map.of("purpose","ANSWER","questionId",doc,"expectedAttempt",0),"report.md","text/markdown","# Test report\nRequirements traced to tests. Acceptance criteria and observations.".getBytes())).path("id").asLong();
+        var request=Map.of("answers",List.of(Map.of("questionId",doc,"answer",Map.of("text","Report attached","assetIds",List.of(file))),Map.of("questionId",code,"answer","def answer():\n    return 42")),"expectedAttempt",1,"submissionKey","specialized-1");
+        long sid=data(send(studentSession,"POST",path+"/submissions",request)).path("id").asLong();
+        var scans=new java.util.concurrent.atomic.AtomicInteger();var previous=scannerDelegate;
+        scannerDelegate=scan->{
+            scans.incrementAndGet();assertThat(scan.sourceDirectory().resolve("Answer.py")).exists();
+            return new SonarGateway.Analysis(scan.projectKey(),"controlled-task","controlled-analysis","OK",Map.of(),List.of());
+        };
+        try {
+            var review=data(send(teacherSession,"POST",reviews(501)+"/assignments",Map.of("submissionId",sid)));
+            finish(review,JobStatus.COMPLETED);assertThat(scans.get()).isEqualTo(1);
+            var result=data(send(teacherSession,"GET",reviews(501)+"/"+review.path("id").asLong()+"/report",null)).path("result");
+            assertThat(result.path("normalizedEvidence").toString()).contains("SONARQUBE","Document assessment");
+            assertThat(jdbc.queryForObject("select final_score from grade where submission_id=?",java.math.BigDecimal.class,sid)).isNull();
+        }finally{scannerDelegate=previous;}
+    }
+
+    @Test @Order(10) void ownersCanDeleteConversationAndOtherUsersCannotReadDeletedHistory() throws Exception {
+        String base="/api/v1/courses/501/conversations";
+        long id=data(send(studentSession,"POST",base,Map.of("title","Delete own chat"))).path("id").asLong();
+        assertThat(send(peerSession,"DELETE",base+"/"+id,null).statusCode()).isEqualTo(404);
+        data(send(studentSession,"DELETE",base+"/"+id,null));
+        assertThat(send(studentSession,"GET",base+"/"+id+"/messages",null).statusCode()).isEqualTo(404);
+        assertThat(send(studentSession,"GET",base+"/"+id+"/generation",null).statusCode()).isEqualTo(404);
+        assertThat(data(send(studentSession,"GET",base,null)).path("items").toString()).doesNotContain("Delete own chat");
+    }
+
+    private byte[] diagram() throws Exception {
+        var image=new java.awt.image.BufferedImage(620,140,java.awt.image.BufferedImage.TYPE_INT_RGB);
+        var g=image.createGraphics();g.setColor(java.awt.Color.WHITE);g.fillRect(0,0,620,140);g.setColor(java.awt.Color.BLACK);g.setFont(new java.awt.Font("SansSerif",java.awt.Font.PLAIN,23));g.drawString("Controller -> Service -> Repository",15,70);g.dispose();
+        var output=new ByteArrayOutputStream();javax.imageio.ImageIO.write(image,"png",output);return output.toByteArray();
+    }
+    private HttpResponse<String> upload(Session session,String path,Map<String,Object> fields,String name,String type,byte[] bytes)throws Exception {
+        String boundary="typed-"+UUID.randomUUID();var body=new ByteArrayOutputStream();
+        for(var field:fields.entrySet())body.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\""+field.getKey()+"\"\r\n\r\n"+field.getValue()+"\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        body.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\"file\"; filename=\""+name+"\"\r\nContent-Type: "+type+"\r\n\r\n").getBytes());body.write(bytes);body.write(("\r\n--"+boundary+"--\r\n").getBytes());
+        return session.client().send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+path)).header(session.header(),session.token()).header("Content-Type","multipart/form-data; boundary="+boundary).POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray())).build(),HttpResponse.BodyHandlers.ofString());
     }
 
     private void startExternalWorker() throws Exception {
@@ -284,6 +438,10 @@ class PhaseFiveReviewIntegrationTest {
         assertThat(data(send(teacherSession, "GET", reviews(501) + "/" + review.path("id").asLong(), null)).path("status").asText())
                 .isEqualTo(expected == JobStatus.COMPLETED ? "COMPLETED" : "FAILED");
     }
+    private void assertUnscoredWaitingGrade() {
+        assertThat(jdbc.queryForObject("select count(*) from grade where submission_id=? and status='WAITING_REVIEW' and ai_suggested_score is null and final_score is null", Integer.class, submission)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from feedback f join grade g on f.grade_id=g.id where g.submission_id=?", Integer.class, submission)).isZero();
+    }
     private int countReports(JsonNode review) { return jdbc.queryForObject("select count(*) from review_report where review_job_id=?", Integer.class, review.path("id").asLong()); }
     private JsonNode assignmentReview() throws Exception { return data(send(teacherSession, "POST", reviews(501) + "/assignments", Map.of("submissionId", submission))); }
     private JsonNode codeReview() throws Exception { return data(send(teacherSession, "POST", reviews(501) + "/code", Map.of("submissionId", submission, "attachmentObjectKey", "phase5/source.zip"))); }
@@ -292,7 +450,7 @@ class PhaseFiveReviewIntegrationTest {
     private void resource(long course, String name, String body) throws Exception {
         byte[] bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8); String key = "phase5/" + UUID.randomUUID() + ".md";
         storage.put(key, new ByteArrayInputStream(bytes), bytes.length, "text/markdown");
-        jdbc.update("insert into course_resources(course_id,uploader_id,name,resource_type,object_key,content_type,size_bytes) values(?,?,?,'DOCUMENT',?,'text/markdown',?)", course, teacher, name, key, bytes.length);
+        jdbc.update("insert into review_artifact(course_id,owner_id,file_name,object_key,media_type,size_bytes) values(?,?,?,?,'text/markdown',?)", course, teacher, name, key, bytes.length);
     }
     private byte[] zip() throws Exception {
         var output = new ByteArrayOutputStream();

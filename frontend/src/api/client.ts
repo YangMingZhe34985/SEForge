@@ -43,14 +43,16 @@ function normalizeError(error: unknown): ApiError {
     window.dispatchEvent(new CustomEvent('seforge:unauthorized'))
   }
   const fields = fieldErrors(envelope?.details)
+  const timedOut = !error.response && ['ECONNABORTED', 'ETIMEDOUT'].includes(error.code || '')
+  const traceId = envelope?.traceId || error.response?.headers?.['x-trace-id'] || error.config?.headers?.['X-Trace-Id']
   const message = Object.keys(fields).length && envelope?.code === 'VALIDATION_FAILED'
     ? Object.entries(fields).map(([field, text]) => `${field}: ${text}`).join('；')
-    : envelope?.message || (status === 0 ? '无法连接到服务器' : '请求失败')
+    : envelope?.message || (timedOut ? '请求等待超时，服务器可能仍在处理；请检查 API 日志与模型调用状态，不要连续重复提交' : status === 0 ? '无法连接到服务器，请检查 API / Vite 代理是否仍在运行' : '请求失败')
   return new ApiError(
-    status >= 500 && envelope?.traceId ? `${message}（${envelope.code}，追踪号 ${envelope.traceId}）` : message,
+    traceId ? `${message}（${envelope?.code || (timedOut ? 'REQUEST_TIMEOUT' : 'REQUEST_FAILED')}，追踪号 ${traceId}）` : message,
     status,
-    String(envelope?.code || 'REQUEST_FAILED'),
-    envelope?.traceId,
+    String(envelope?.code || (timedOut ? 'REQUEST_TIMEOUT' : 'REQUEST_FAILED')),
+    traceId,
     envelope?.details,
   )
 }
@@ -110,4 +112,9 @@ export async function apiRequest<T>(config: AxiosRequestConfig): Promise<T> {
 export function apiUrl(path: string): string {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
   return `${apiBaseUrl}${normalizedPath}`
+}
+
+export async function apiBlob(url: string): Promise<Blob> {
+  try { return (await http.get<Blob>(url, { responseType: 'blob' })).data }
+  catch (error) { throw normalizeError(error) }
 }

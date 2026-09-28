@@ -445,6 +445,8 @@ public class CourseService {
         accessService.requireTeachingStaff(courseId, actorId);
         KnowledgePoint point = requireKnowledgePoint(courseId, pointId);
         if (request.chapterId() != null) requireChapter(courseId, request.chapterId());
+        if(point.getSourceCitations()!=null && !java.util.Objects.equals(point.getChapterId(),request.chapterId()))
+            throw new AppException(ErrorCode.CONFLICT,"有来源引用的知识点不能迁移到其他章节，请在目标章节重新生成");
         point.update(request.chapterId(), request.title(), trimNullable(request.description()), request.sortOrder());
         return knowledgePointView(point);
     }
@@ -452,7 +454,16 @@ public class CourseService {
     @Transactional
     public void deleteKnowledgePoint(Long courseId, Long pointId, Long actorId) {
         accessService.requireTeachingStaff(courseId, actorId);
-        knowledgePointRepository.delete(requireKnowledgePoint(courseId, pointId));
+        KnowledgePoint point=requireKnowledgePoint(courseId, pointId);
+        boolean referenced=knowledgePointRepository.assignmentReferences(pointId)>0;
+        for(String config:knowledgePointRepository.assignmentConfigs(courseId)) {
+            if(config==null)continue;
+            try {for(var id:new com.fasterxml.jackson.databind.ObjectMapper().readTree(config).path("knowledgePointIds"))
+                if(id.asText().equals(pointId.toString()))referenced=true;
+            }catch(com.fasterxml.jackson.core.JsonProcessingException e){throw new AppException(ErrorCode.CONFLICT,"Cannot verify assignment references safely");}
+        }
+        if(referenced)throw new AppException(ErrorCode.CONFLICT,"知识点已被作业引用，请保留或编辑，不可直接删除");
+        knowledgePointRepository.delete(point);
     }
 
     @Transactional
@@ -619,14 +630,15 @@ public class CourseService {
 
     private KnowledgePointView knowledgePointView(KnowledgePoint point) {
         return new KnowledgePointView(
-                point.getId(), point.getChapterId(), point.getTitle(), point.getDescription(), point.getSortOrder());
+                point.getId(), point.getChapterId(), point.getTitle(), point.getDescription(), point.getSortOrder(),
+                point.getImportance(), point.getSourceCitations());
     }
 
     private CourseResourceView resourceView(CourseResource resource) {
         return new CourseResourceView(
                 resource.getId(), resource.getCourseId(), resource.getChapterId(), resource.getUploaderId(),
                 resource.getName(), resource.getDescription(), resource.getResourceType(), resource.getObjectKey(),
-                resource.getContentType(), resource.getSizeBytes(), resource.getCreatedAt());
+                resource.getContentType(), resource.getSizeBytes(), resource.getCreatedAt(), resource.getExternalUrl());
     }
 
     private String trimNullable(String value) {

@@ -24,16 +24,19 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class ConversationController {
     private final ConversationService conversations;
     private final CourseQaStreamService streams;
+    private final com.ustb.seforge.conversation.service.ConversationGenerationService generations;
 
-    public ConversationController(ConversationService conversations, CourseQaStreamService streams) {
+    public ConversationController(ConversationService conversations, CourseQaStreamService streams,
+                                  com.ustb.seforge.conversation.service.ConversationGenerationService generations) {
         this.conversations = conversations;
         this.streams = streams;
+        this.generations = generations;
     }
 
     @org.springframework.web.bind.annotation.ExceptionHandler(
             org.springframework.web.context.request.async.AsyncRequestNotUsableException.class)
     public void disconnectedClient() {
-        // The stream callback already cancels the provider. The socket is unusable:
+        // A disconnected presentation socket does not cancel durable generation:
         // do not ask the global JSON error handler to write a second response.
     }
 
@@ -75,8 +78,15 @@ public class ConversationController {
     @DeleteMapping("/{conversationId}")
     public ApiEnvelope<Void> archive(@PathVariable Long courseId, @PathVariable Long conversationId,
                                      @AuthenticationPrincipal UserPrincipal principal) {
-        conversations.archive(courseId, conversationId, principal.userId());
-        return ApiEnvelope.success("Conversation archived", null);
+        generations.deleteConversation(courseId, conversationId, principal.userId());
+        return ApiEnvelope.success("Conversation and associated content deleted", null);
+    }
+
+    public record RenameRequest(@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max=255) String title){}
+    @org.springframework.web.bind.annotation.PutMapping("/{conversationId}")
+    public ApiEnvelope<ConversationView> rename(@PathVariable Long courseId,@PathVariable Long conversationId,
+            @AuthenticationPrincipal UserPrincipal principal,@Valid @RequestBody RenameRequest request){
+        return ApiEnvelope.success(conversations.rename(courseId,conversationId,principal.userId(),request.title()));
     }
 
     @DeleteMapping("/{conversationId}/requests/{requestId}")
@@ -85,7 +95,13 @@ public class ConversationController {
                                                     @PathVariable String requestId,
                                                     @AuthenticationPrincipal UserPrincipal principal) {
         conversations.require(courseId, conversationId, principal.userId());
-        return ApiEnvelope.success(Map.of("cancelled", streams.cancel(principal.userId(), requestId)));
+        return ApiEnvelope.success(Map.of("cancelled", streams.cancel(courseId, conversationId, principal.userId(), requestId)));
+    }
+
+    @GetMapping("/{conversationId}/generation")
+    public ApiEnvelope<GenerationView> generation(@PathVariable Long courseId, @PathVariable Long conversationId,
+                                                  @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiEnvelope.success(generations.latest(courseId, conversationId, principal.userId()));
     }
 
     @PostMapping("/{conversationId}/messages/{messageId}/feedback")

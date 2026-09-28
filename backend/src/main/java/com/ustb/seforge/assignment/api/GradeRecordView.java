@@ -21,7 +21,9 @@ public record GradeRecordView(
         String overrideReason,
         Long graderId,
         Long aiTraceId,
-        java.util.List<Item> rubricItems) {
+        BigDecimal ruleSuggestedScore,
+        java.util.List<Item> rubricItems,
+        Long submissionId, BigDecimal suggestedScore, Instant publishedAt, Long publishedBy) {
     public record Item(Long rubricItemId, String source, BigDecimal suggestedScore,
-                       BigDecimal finalScore, String feedback, Long authorId) {}
+                       BigDecimal finalScore, String feedback, Long authorId, Long questionId) {}
 }

@@ -209,8 +209,10 @@ public class CourseStructureController {
     @PostMapping(value = "/resources/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiEnvelope<CourseResourceView>> uploadResource(@PathVariable Long courseId,
             @RequestParam(required = false) Long chapterId, @RequestParam MultipartFile file,
+            @RequestParam(required = false) Boolean includeInKnowledge,
             @AuthenticationPrincipal UserPrincipal principal) {
-        CourseResourceView resource = files.upload(courseId, chapterId, principal.userId(), file);
+        boolean include=includeInKnowledge!=null?includeInKnowledge:chapterId!=null && com.ustb.seforge.content.service.KnowledgeDocumentService.supports(file.getOriginalFilename());
+        CourseResourceView resource = files.upload(courseId, chapterId, principal.userId(), file,include);
         auditService.record(principal.userId(), courseId, "COURSE_RESOURCE_UPLOAD", "COURSE_RESOURCE", resource.id(),
                 AuditService.SUCCEEDED);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiEnvelope.success(resource));
@@ -230,7 +232,7 @@ public class CourseStructureController {
     @DeleteMapping("/resources/{resourceId}")
     public ApiEnvelope<Void> deleteResource(@PathVariable Long courseId, @PathVariable Long resourceId,
             @AuthenticationPrincipal UserPrincipal principal) {
-        courseService.removeResource(courseId, resourceId, principal.userId());
+        files.remove(courseId, resourceId, principal.userId());
         auditService.record(principal.userId(), courseId, "COURSE_RESOURCE_DELETE", "COURSE_RESOURCE", resourceId,
                 AuditService.SUCCEEDED);
         return ApiEnvelope.success("Resource removed", null);

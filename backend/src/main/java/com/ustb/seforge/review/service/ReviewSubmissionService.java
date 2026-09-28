@@ -57,6 +57,9 @@ public class ReviewSubmissionService {
     private final AsyncJobService asyncJobs;
     private final ObjectMapper objectMapper;
     private final AuditService audit;
+    private final ReviewArtifactService artifacts;
+    private final com.ustb.seforge.assignment.service.AssignmentMediaService media;
+    private final com.ustb.seforge.assignment.repository.AssignmentQuestionRepository questions;
 
     public ReviewSubmissionService(
             ReviewJobRepository reviewJobs,
@@ -68,7 +71,9 @@ public class ReviewSubmissionService {
             CourseAccessService courseAccess,
             AsyncJobService asyncJobs,
             ObjectMapper objectMapper,
-            AuditService audit) {
+            AuditService audit, ReviewArtifactService artifacts,
+            com.ustb.seforge.assignment.service.AssignmentMediaService media,
+            com.ustb.seforge.assignment.repository.AssignmentQuestionRepository questions) {
         this.reviewJobs = reviewJobs;
         this.reports = reports;
         this.documents = documents;
@@ -79,55 +84,60 @@ public class ReviewSubmissionService {
         this.asyncJobs = asyncJobs;
         this.objectMapper = objectMapper;
         this.audit = audit;
+        this.artifacts=artifacts;this.media=media;this.questions=questions;
     }
 
     @Transactional
     public ReviewJobView submitDocument(Long courseId, Long userId,
                                         CreateDocumentReviewRequest request) {
         courseAccess.requireTeachingStaff(courseId, userId);
-        boolean documentTarget = request.documentId() != null;
-        boolean resourceTarget = request.resourceId() != null;
-        if (documentTarget == resourceTarget) {
-            throw malformed("Exactly one of documentId or resourceId is required");
-        }
-        Long documentId = null;
-        Long resourceId = null;
-        String objectKey;
-        String fileName;
-        String mediaType;
-        long size;
-        if (documentTarget) {
-            KnowledgeDocument document = documents.findByIdAndCourseId(request.documentId(), courseId)
-                    .orElseThrow(this::notFound);
-            documentId = document.getId();
-            objectKey = document.getObjectKey();
-            fileName = document.getOriginalName();
-            mediaType = document.getMediaType();
-            size = document.getSizeBytes();
-        } else {
-            CourseResource resource = resources.findByIdAndCourseIdAndStatus(
-                            request.resourceId(), courseId, ResourceStatus.ACTIVE)
-                    .orElseThrow(this::notFound);
-            resourceId = resource.getId();
-            objectKey = resource.getObjectKey();
-            fileName = resource.getName();
-            mediaType = resource.getContentType();
-            size = resource.getSizeBytes() == null ? 0 : resource.getSizeBytes();
-        }
+        if(request.documentId()!=null||request.resourceId()!=null) throw malformed("Course knowledge is a RAG source; select a DOCUMENT_REPORT submission or upload a review artifact");
+        if((request.submissionId()==null)==(request.artifactId()==null))throw malformed("Select exactly one submission or review artifact");
+        DocumentTarget target=resolveDocumentTarget(courseId,request);
+        String objectKey=target.objectKey(),fileName=target.fileName(),mediaType=target.mediaType();long size=target.size();
         if (size > 25L * 1024 * 1024) throw malformed("Document review is limited to 25 MB");
         if (!DOCUMENT_EXTENSIONS.contains(extension(fileName))) {
             throw malformed("Document review supports PDF, PPT/PPTX, DOCX, Markdown and TXT files");
         }
-        ReviewJob review = new ReviewJob(courseId, null, null, documentId, resourceId, userId,
-                ReviewType.DOCUMENT, objectKey, json(Map.of(
-                        "documentKind", documentKind(request.documentKind()),
-                        "fileName", fileName,
-                        "mediaType", safe(mediaType, "application/octet-stream"))));
+        var config=new java.util.LinkedHashMap<String,Object>();
+        config.put("documentKind",documentKind(request.documentKind()));config.put("fileName",fileName);config.put("mediaType",safe(mediaType,"application/octet-stream"));
+        config.put("artifactId",request.artifactId());config.put("questionId",request.questionId());config.put("mediaId",request.mediaId());config.put("source","REVIEW_ARTIFACT_OR_SUBMISSION");
+        ReviewJob review = new ReviewJob(courseId, target.assignmentId(), request.submissionId(), null, null, userId,
+                ReviewType.DOCUMENT, objectKey, json(config));
         ReviewJobView view = enqueue(review, request.idempotencyKey());
         audit.record(userId, courseId, "REVIEW_DOCUMENT_REQUEST", "REVIEW_JOB", view.id(),
                 AuditService.SUCCEEDED);
         return view;
     }
+
+    public record DocumentTarget(Long assignmentId,String objectKey,String fileName,String mediaType,long size) {}
+    /** Resolve ownership again in the worker; object keys supplied by clients never grant access. */
+    public DocumentTarget resolveDocumentTarget(Long courseId,CreateDocumentReviewRequest request) {
+        if(request.artifactId()!=null){
+            if(request.submissionId()!=null||request.questionId()!=null||request.mediaId()!=null)throw malformed("Ambiguous document target");
+            var a=artifacts.require(courseId,request.artifactId());return new DocumentTarget(null,a.getObjectKey(),a.getFileName(),a.getMediaType(),a.getSizeBytes());
+        }
+        if(request.submissionId()==null||request.questionId()==null)throw malformed("Submission and question are required");
+        var s=requireSubmitted(request.submissionId(),courseId);
+        var q=questions.findByIdAndAssignmentId(request.questionId(),s.getAssignmentId()).filter(v->v.getQuestionType()==com.ustb.seforge.assignment.domain.QuestionType.DOCUMENT_REPORT).orElseThrow(this::notFound);
+        var answer=answers.findAllBySubmissionIdOrderByIdAsc(s.getId()).stream().filter(a->a.getQuestionId().equals(q.getId())).findFirst().orElseThrow(this::notFound);
+        if(request.mediaId()!=null){
+            try{if(!com.ustb.seforge.assignment.service.QuestionContent.ids(objectMapper.readTree(answer.getAnswerDataJson()).path("assetIds")).contains(request.mediaId()))throw notFound();}
+            catch(JsonProcessingException|IllegalArgumentException e){throw notFound();}
+            var m=media.bound(request.mediaId(),s.getAssignmentId(),com.ustb.seforge.assignment.domain.AssignmentMedia.Purpose.ANSWER,s.getId(),q.getId());
+            return new DocumentTarget(s.getAssignmentId(),m.getObjectKey(),m.getFileName(),m.getMediaType(),m.getSizeBytes());
+        }
+        String key=answer.getAttachmentObjectKey();if(key==null)throw notFound();
+        return new DocumentTarget(s.getAssignmentId(),key,key.substring(key.lastIndexOf('/')+1),"application/octet-stream",answer.getAttachmentSizeBytes());
+    }
+
+    @Transactional
+    public ArtifactView uploadArtifact(Long course,Long actor,org.springframework.web.multipart.MultipartFile file){
+        var a=artifacts.upload(course,actor,file);
+        audit.record(actor,course,"REVIEW_ARTIFACT_UPLOADED","REVIEW_ARTIFACT",a.getId(),AuditService.SUCCEEDED);
+        return new ArtifactView(a.getId(),a.getFileName(),a.getMediaType(),a.getSizeBytes());
+    }
+    public record ArtifactView(Long id,String fileName,String mediaType,long sizeBytes) {}
 
     @Transactional
     public ReviewJobView submitAssignment(Long courseId, Long userId,

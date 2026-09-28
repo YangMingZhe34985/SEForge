@@ -22,11 +22,17 @@ public class Grade extends BaseEntity {
     private Long graderId;
     @Column(name = "ai_suggested_score", precision = 10, scale = 2)
     private BigDecimal aiSuggestedScore;
+    @Column(name = "rule_suggested_score", precision = 10, scale = 2)
+    private BigDecimal ruleSuggestedScore;
     @Column(name = "final_score", precision = 10, scale = 2)
     private BigDecimal finalScore;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 24)
-    private GradeStatus status = GradeStatus.PENDING;
+    private GradeStatus status = GradeStatus.WAITING_REVIEW;
+    @Column(name = "published_at")
+    private Instant publishedAt;
+    @Column(name = "published_by")
+    private Long publishedBy;
     @Column(name = "confirmed_at")
     private Instant confirmedAt;
     @Column(name = "override_reason", columnDefinition = "text")
@@ -48,11 +54,11 @@ public class Grade extends BaseEntity {
     }
 
     public void applyAiSuggestion(BigDecimal score, String model, String promptVersion) {
-        if (status == GradeStatus.CONFIRMED) throw new IllegalStateException("AI cannot replace a confirmed grade");
+        if (isFinal()) throw new IllegalStateException("AI cannot replace a confirmed grade");
         aiSuggestedScore = score;
         modelName = model;
         this.promptVersion = promptVersion;
-        status = GradeStatus.AI_REVIEWED;
+        status = GradeStatus.PENDING_CONFIRMATION;
     }
 
     public void confirm(Long graderId, BigDecimal score, String reason, Instant now) {
@@ -63,7 +69,31 @@ public class Grade extends BaseEntity {
         status = GradeStatus.CONFIRMED;
     }
 
+    public void applyRuleSuggestion(BigDecimal score, boolean complete) {
+        if(isFinal())throw new IllegalStateException("Cannot replace a confirmed grade");
+        ruleSuggestedScore=score;
+        if(complete){aiSuggestedScore=null;modelName="RULE";promptVersion="objective:v1";status=GradeStatus.PENDING_CONFIRMATION;}
+        else if (status == GradeStatus.WAITING_REVIEW) status = GradeStatus.REVIEWED;
+    }
+
+    public void applyMixedSuggestion(BigDecimal total, BigDecimal ruleTotal, String model, String promptVersion, boolean hasAi) {
+        if(hasAi)applyAiSuggestion(total.subtract(ruleTotal),model,promptVersion);
+        applyRuleSuggestion(ruleTotal,!hasAi);
+    }
+
+    public BigDecimal getRuleSuggestedScore(){return ruleSuggestedScore;}
+    public BigDecimal getSuggestedScore(){return aiSuggestedScore==null&&ruleSuggestedScore==null?null:
+            (aiSuggestedScore==null?BigDecimal.ZERO:aiSuggestedScore).add(ruleSuggestedScore==null?BigDecimal.ZERO:ruleSuggestedScore);}
+
     public Long getSubmissionId() { return submissionId; }
+    public boolean isFinal() { return status == GradeStatus.CONFIRMED || status == GradeStatus.PUBLISHED; }
+    public void manuallyReviewed() { if (isFinal()) throw new IllegalStateException("Final grade is immutable"); status = GradeStatus.PENDING_CONFIRMATION; }
+    public void publish(Long actor, Instant now) {
+        if (status != GradeStatus.CONFIRMED) throw new IllegalStateException("Only confirmed grades can be published");
+        publishedBy = actor; publishedAt = now; status = GradeStatus.PUBLISHED;
+    }
+    public Instant getPublishedAt() { return publishedAt; }
+    public Long getPublishedBy() { return publishedBy; }
     public Long getCourseId() { return courseId; }
     public Long getStudentId() { return studentId; }
     public Long getGraderId() { return graderId; }

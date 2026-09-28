@@ -16,6 +16,7 @@ public final class PhaseThreeProviderStub implements AutoCloseable {
     public final AtomicInteger embeddingCalls = new AtomicInteger();
     public final AtomicInteger chatCalls = new AtomicInteger();
     public volatile boolean failEmbedding;
+    public volatile boolean invalidPointSource;
     private static final List<String> TERMS = List.of("cohesion", "coupling", "traceability", "verification", "validation", "encapsulation", "regression", "equivalence", "boundary", "refactoring", "atomicity", "consistency", "isolation", "durability", "primarykey", "foreignkey", "normalization", "indexing", "deadlock", "optimistic");
 
     public PhaseThreeProviderStub() {
@@ -50,6 +51,16 @@ public final class PhaseThreeProviderStub implements AutoCloseable {
                 var messages = json.readTree(exchange.getRequestBody()).path("messages");
                 // Fault controls apply only to the current request, never prior conversation history.
                 String request = messages.path(messages.size() - 1).path("content").asText();
+                if(messages.path(0).path("content").asText().contains("teaching knowledge points")) {
+                    var evidence=json.readTree(request);
+                    long source=invalidPointSource?-999:evidence.path(0).path("id").asLong();
+                    String proposal=json.writeValueAsString(Map.of("points",List.of(Map.of("name","Cohesion","description","Chapter evidence on cohesion","importance","CORE","sourceIds",List.of(Long.toString(source))))));
+                    byte[] body=("data: "+json.writeValueAsString(Map.of("id","point-draft","object","chat.completion.chunk","model","phase3-chat",
+                            "choices",List.of(Map.of("index",0,"delta",Map.of("content",proposal)))))
+                            +"\n\ndata: {\"id\":\"point-draft\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n").getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().set("Content-Type","text/event-stream");exchange.sendResponseHeaders(200,body.length);
+                    exchange.getResponseBody().write(body);exchange.close();return;
+                }
                 exchange.getResponseHeaders().set("Content-Type","text/event-stream");
                 exchange.sendResponseHeaders(200, 0);
                 try (var out = exchange.getResponseBody()) {

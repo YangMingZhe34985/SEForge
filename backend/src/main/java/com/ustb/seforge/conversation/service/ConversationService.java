@@ -142,7 +142,17 @@ public class ConversationService {
     public Conversation require(Long courseId, Long conversationId, Long ownerId) {
         access.requireMember(courseId, ownerId);
         return conversations.findByIdAndOwnerIdAndCourseId(conversationId, ownerId, courseId)
+                .filter(value -> value.getStatus() == ConversationStatus.ACTIVE)
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Conversation not found"));
+    }
+
+    @Transactional
+    public ConversationView rename(Long course,Long id,Long owner,String title){
+        access.requireMember(course,owner);
+        var row=conversations.lockOwned(id,owner,course).orElseThrow(()->new AppException(ErrorCode.RESOURCE_NOT_FOUND,"Conversation not found"));
+        require(course,id,owner);
+        if(title==null||title.isBlank()||title.length()>255)throw new AppException(ErrorCode.VALIDATION_FAILED,"会话名称需为 1 至 255 个字符");
+        row.rename(title.trim());return ConversationView.from(row);
     }
 
     private String history(Conversation conversation) {

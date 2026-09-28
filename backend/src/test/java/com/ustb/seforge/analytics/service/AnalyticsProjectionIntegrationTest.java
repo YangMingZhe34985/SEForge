@@ -28,6 +28,7 @@ class AnalyticsProjectionIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired AnalyticsProjectionService projection;
     @Autowired AnalyticsService analytics;
+    @Autowired DashboardQueryService dashboardQueries;
 
     @Test void differentialUpdatesDeletionReplayScopeAndLateCommit() throws Exception {
         for(int id=1;id<=3;id++) jdbc.update("INSERT INTO users(id,email,username,password_hash) VALUES(?,?,?,'test-only')",id,"analytics"+id+"@example.invalid","analytics"+id);
@@ -60,6 +61,15 @@ class AnalyticsProjectionIntegrationTest {
         // Changes made without incrementing a JPA version are still journaled.
         jdbc.update("UPDATE feedback SET final_score=4 WHERE grade_id=1");projection.refresh(1L);
         assertThat(projection.view(1,null).knowledgePoints().getFirst().weak()).isTrue();
+        // Rubric-free RULE/MANUAL feedback retains grade percentages and knowledge-point evidence.
+        jdbc.update("UPDATE feedback SET question_id=1,rubric_item_id=NULL WHERE grade_id=1");
+        jdbc.update("DELETE FROM rubric WHERE id=1");
+        jdbc.update("UPDATE grade SET final_score=7 WHERE id=1");
+        projection.refresh(1L);
+        assertThat(projection.view(1,11L).overview().averageFinalScore()).isEqualByComparingTo("70");
+        assertThat(projection.view(1,11L).knowledgePoints().getFirst().scoreRate()).isEqualByComparingTo("40");
+        assertThat(dashboardQueries.aggregate(1L,11L).overview().averageFinalScore()).isEqualByComparingTo("70");
+        assertThat(dashboardQueries.aggregate(1L,11L).knowledgePoints().getFirst().scoreRate()).isEqualByComparingTo("40");
         jdbc.update("INSERT INTO conversation(id,course_id,owner_id,title) VALUES(1,1,2,'Questions')");
         jdbc.update("INSERT INTO conversation_message(id,conversation_id,course_id,role,content,status) VALUES(1,1,1,'USER','What is a transaction?','COMPLETE')");
         jdbc.update("INSERT INTO answer_feedback(message_id,course_id,user_id,rating) VALUES(1,1,2,'HELPFUL')");

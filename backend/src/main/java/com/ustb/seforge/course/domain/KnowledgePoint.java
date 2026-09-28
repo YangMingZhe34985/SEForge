@@ -19,6 +19,10 @@ public class KnowledgePoint extends BaseEntity {
 
     @Column(columnDefinition = "text")
     private String description;
+    @Column(length=20)
+    private String importance;
+    @Column(name="source_citations",columnDefinition="json")
+    private String sourceCitations;
 
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
@@ -39,6 +43,9 @@ public class KnowledgePoint extends BaseEntity {
     public String getTitle() { return title; }
     public String getDescription() { return description; }
     public int getSortOrder() { return sortOrder; }
+    public String getImportance() { return importance; }
+    public String getSourceCitations() { return sourceCitations; }
+    public void provenance(String importance, String citations) { this.importance=importance; this.sourceCitations=citations; }
 
     public void update(Long chapterId, String title, String description, int sortOrder) {
         this.chapterId = chapterId;

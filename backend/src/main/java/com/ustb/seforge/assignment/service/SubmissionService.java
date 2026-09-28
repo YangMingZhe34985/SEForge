@@ -43,11 +43,14 @@ public class SubmissionService {
     private final TutorPolicyCodec policies;
     private final ObjectMapper objectMapper;
     private final SubmissionCompletenessValidator completeness;
+    private final AssignmentMediaService media;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     public SubmissionService(AssignmentRepository assignments, AssignmentQuestionRepository questions,
                              SubmissionRepository submissions, SubmissionAnswerRepository answers,
                              AssignmentAuthorizationService authorization, TutorPolicyCodec policies,
-                             ObjectMapper objectMapper, SubmissionCompletenessValidator completeness) {
+                             ObjectMapper objectMapper, SubmissionCompletenessValidator completeness,
+                             AssignmentMediaService media, org.springframework.context.ApplicationEventPublisher events) {
         this.assignments = assignments;
         this.questions = questions;
         this.submissions = submissions;
@@ -56,6 +59,8 @@ public class SubmissionService {
         this.policies = policies;
         this.objectMapper = objectMapper;
         this.completeness = completeness;
+        this.media = media;
+        this.events = events;
     }
 
     @Transactional(readOnly = true)
@@ -116,6 +121,7 @@ public class SubmissionService {
                 answers.findAllBySubmissionIdOrderByIdAsc(draft.getId()));
         if (request.submissionKey() != null) draft.bindSubmissionKey(request.submissionKey());
         draft.submit(now, deadline.late());
+        events.publishEvent(new SubmissionReady(draft.getId()));
         return view(draft);
     }
 
@@ -177,6 +183,7 @@ public class SubmissionService {
                 throw notFound("Question does not belong to this assignment");
             }
             EncodedAnswer encoded = encode(requested.answer());
+            media.validateAnswer(submission, requested.questionId(), requested.answer());
             SubmissionAnswer answer = answers.findBySubmissionIdAndQuestionId(submission.getId(), requested.questionId())
                     .orElseGet(() -> new SubmissionAnswer(submission.getId(), requested.questionId(),
                             null, null, null));
@@ -255,6 +262,8 @@ public class SubmissionService {
 
     private record EncodedAnswer(String text, String json) {
     }
+
+    public record SubmissionReady(Long submissionId) {}
 
     private record Deadline(boolean late, Instant effectiveDueAt) {
     }

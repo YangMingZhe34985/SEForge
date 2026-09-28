@@ -43,9 +43,21 @@ class CourseQaStreamServiceTest {
     @Mock PromptCatalog prompts;
     @Mock AiGateway ai;
 
+    private com.ustb.seforge.conversation.service.ConversationGenerationService generations() {
+        var value = mock(com.ustb.seforge.conversation.service.ConversationGenerationService.class);
+        org.mockito.Mockito.lenient().when(value.begin(any(), any(), any(), any(), any())).thenAnswer(call -> {
+            AskQuestionRequest request = call.getArgument(3);
+            return conversations.addQuestion(call.getArgument(0), call.getArgument(1), call.getArgument(2),
+                    request.requestId(), request.content());
+        });
+        org.mockito.Mockito.lenient().when(value.complete(any(), any(), any())).thenAnswer(call ->
+                ((java.util.function.Supplier<?>) call.getArgument(2)).get());
+        return value;
+    }
+
     @Test
     void retrievalFailureEmitsDiagnosticTerminalWithoutCallingAiOrSavingAnswer() {
-        var service = new CourseQaStreamService(conversations, knowledge, prompts, ai, Runnable::run);
+        var service = new CourseQaStreamService(conversations, knowledge, prompts, ai, Runnable::run, generations());
         var conversation = new ConversationView(21L,11L,"Question",ConversationStatus.ACTIVE,null,Instant.now(),Instant.now());
         when(conversations.addQuestion(11L,21L,7L,"infra-1","question"))
                 .thenReturn(new ConversationService.QuestionContext(conversation,31L,"",false));
@@ -64,7 +76,7 @@ class CourseQaStreamServiceTest {
     void providerCannotEmitASecondTerminalEvent() {
         TaskExecutor sameThread = Runnable::run;
         CourseQaStreamService service = new CourseQaStreamService(
-                conversations, knowledge, prompts, ai, sameThread);
+                conversations, knowledge, prompts, ai, sameThread, generations());
         AskQuestionRequest request = new AskQuestionRequest("req-1", "What is cohesion?");
         ConversationView conversation = new ConversationView(21L, 11L, "Question",
                 ConversationStatus.ACTIVE, null, Instant.now(), Instant.now());
@@ -123,7 +135,7 @@ class CourseQaStreamServiceTest {
 
     @Test
     void cancellationBeatsLateProviderCompletionAndNeverPersistsPrefix() {
-        var service = new CourseQaStreamService(conversations, knowledge, prompts, ai, Runnable::run);
+        var service = new CourseQaStreamService(conversations, knowledge, prompts, ai, Runnable::run, generations());
         var conversation = new ConversationView(21L,11L,"Question",ConversationStatus.ACTIVE,null,Instant.now(),Instant.now());
         when(conversations.addQuestion(11L,21L,7L,"cancel-1","cohesion"))
                 .thenReturn(new ConversationService.QuestionContext(conversation,31L,"",false));
@@ -135,7 +147,7 @@ class CourseQaStreamServiceTest {
             Consumer<AiResponse> complete = call.getArgument(2);
             Consumer<Throwable> error = call.getArgument(3);
             delta.accept("unfinished prefix");
-            service.cancel(7L,"cancel-1");
+            service.cancel(11L,21L,7L,"cancel-1");
             complete.accept(new AiResponse("unfinished prefix","stub","stub",1,1));
             error.accept(new IllegalStateException("late error containing sensitive internals"));
             delta.accept("late delta");
@@ -149,7 +161,7 @@ class CourseQaStreamServiceTest {
 
     @Test
     void noEvidenceRefusesWithoutCallingChatModel() {
-        var service = new CourseQaStreamService(conversations,knowledge,prompts,ai,Runnable::run);
+        var service = new CourseQaStreamService(conversations,knowledge,prompts,ai,Runnable::run,generations());
         var conversation = new ConversationView(21L,11L,"Question",ConversationStatus.ACTIVE,null,Instant.now(),Instant.now());
         when(conversations.addQuestion(11L,21L,7L,"refuse-1","unknown"))
                 .thenReturn(new ConversationService.QuestionContext(conversation,31L,"",false));

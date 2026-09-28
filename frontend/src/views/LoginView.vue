@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { authApi, type LoginPortal } from '@/api/auth'
+import { CircleCheck, Message, Lock, Right } from '@element-plus/icons-vue'
+import '@/assets/admin.css'
 
 const route = useRoute()
 const router = useRouter()
@@ -124,12 +126,12 @@ async function submitReset() {
 </script>
 
 <template>
-  <main class="auth-page">
+  <main class="auth-page" :class="{ 'admin-auth': isAdminLogin }">
     <section class="auth-intro">
       <div class="auth-brand"><span>SF</span> SEForge</div>
       <div>
         <p class="auth-kicker">AI-NATIVE SOFTWARE ENGINEERING EDUCATION</p>
-        <h1>把课程知识、作业实践与智能反馈连接起来。</h1>
+        <h1>把课程知识、作业实践与智能反馈<span :class="{ 'admin-auth__accent': isAdminLogin }">连接起来。</span></h1>
         <p>面向高校软件工程课程的学习与实践平台。每一次问答、辅导与评审，都绑定真实课程上下文。</p>
       </div>
       <div class="auth-principles">
@@ -144,7 +146,7 @@ async function submitReset() {
           <button type="button" :class="{ active: mode === 'register' }" @click="mode = 'register'">学生注册</button>
         </div>
 
-        <h2 v-else>管理员登录</h2>
+        <div v-else class="admin-auth__heading"><span class="admin-auth__shield" aria-hidden="true"><el-icon><CircleCheck /></el-icon></span><div><h2>{{ mode === 'reset' ? '重置管理员密码' : '管理员登录' }}</h2><p>管理平台 · 维护课程 · 赋能教学</p></div></div>
 
         <div v-if="route.query.expired" class="auth-notice">登录状态已失效，请重新登录。</div>
         <div v-if="route.query.unavailable" class="auth-notice">服务暂时不可用，请稍后重试。</div>
@@ -153,9 +155,9 @@ async function submitReset() {
           <el-form-item v-if="!isAdminLogin" label="登录身份">
             <el-radio-group v-model="selectedPortal"><el-radio-button value="STUDENT">学生</el-radio-button><el-radio-button value="TEACHER">教师</el-radio-button></el-radio-group>
           </el-form-item>
-          <el-form-item :label="portal === 'STUDENT' ? '学号' : '用户名或邮箱'" prop="identifier"><el-input v-model="loginForm.identifier" autocomplete="username" /></el-form-item>
-          <el-form-item label="密码" prop="password"><el-input v-model="loginForm.password" type="password" show-password autocomplete="current-password" /></el-form-item>
-          <el-button native-type="submit" type="primary" size="large" class="auth-submit" :loading="auth.loading">进入工作台</el-button>
+          <el-form-item :label="portal === 'STUDENT' ? '学号' : '用户名或邮箱'" prop="identifier"><el-input v-model="loginForm.identifier" autocomplete="username" :prefix-icon="isAdminLogin ? Message : undefined" :placeholder="isAdminLogin ? '请输入管理员用户名或邮箱' : undefined" /></el-form-item>
+          <el-form-item label="密码" prop="password"><el-input v-model="loginForm.password" type="password" show-password autocomplete="current-password" :prefix-icon="isAdminLogin ? Lock : undefined" :placeholder="isAdminLogin ? '请输入密码' : undefined" /></el-form-item>
+          <el-button native-type="submit" type="primary" size="large" class="auth-submit" :loading="auth.loading">{{ isAdminLogin ? '进入后台' : '进入工作台' }}<el-icon v-if="isAdminLogin" class="admin-auth__arrow"><Right /></el-icon></el-button>
           <p v-if="!isAdminLogin" class="auth-help">原有学生账号尚无学号？<el-button link type="primary" @click="mode = 'claim'">补录学号</el-button></p>
           <p class="auth-help">管理员发放了重置令牌？<el-button link type="primary" @click="mode = 'reset'">重置密码</el-button></p>
         </el-form>
@@ -216,6 +218,29 @@ async function submitReset() {
 .auth-notice { margin-bottom: 18px; border-radius: 8px; padding: 10px 12px; background: #fff4dc; color: #93620e; font-size: 13px; }
 .form-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .auth-help { margin: 16px 0 0; color: #7b8495; font-size: 12px; text-align: center; }
+.admin-auth { grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); background: radial-gradient(ellipse at 95% 5%, #edf4ff, transparent 55%), #f7faff; }
+.admin-auth .auth-intro { padding: clamp(32px, 4.6vw, 78px); background: radial-gradient(ellipse at 5% 0, #263e61 0, transparent 55%), #0e1a30; }
+.admin-auth .auth-intro::after { width: 760px; height: 760px; right: -460px; bottom: -450px; border-width: 80px; border-color: #2bbddc22; }
+.admin-auth .auth-brand { font-size: 25px; }
+.admin-auth .auth-brand span { width: 46px; height: 46px; font-size: 18px; background: linear-gradient(135deg, #5483ff, #13c7ce); }
+.admin-auth .auth-intro h1 { font-size: clamp(34px, 3.65vw, 61px); line-height: 1.4; letter-spacing: -.025em; }
+.admin-auth__accent { color: #40c7e7; }
+.admin-auth .auth-intro h1 + p { color: #bdcbe2; font-size: clamp(14px, 1.2vw, 19px); line-height: 1.9; }
+.admin-auth .auth-kicker { color: #42cfe5; letter-spacing: .19em; font-size: 10px; }
+.admin-auth .auth-card { width: min(100%, 550px); padding: clamp(24px, 3.2vw, 48px); border: 1px solid white; border-radius: 24px; box-shadow: 0 18px 55px #254a8c12; }
+.admin-auth__heading { display: flex; align-items: center; gap: 20px; margin-bottom: 34px; }
+.admin-auth__heading h2 { margin: 0 0 8px; font-size: 27px; }
+.admin-auth__heading p { margin: 0; color: var(--muted); font-size: 13px; }
+.admin-auth__shield { flex: 0 0 66px; width: 66px; height: 66px; display: grid; place-items: center; background: #eaf4ff; border-radius: 18px; color: #2586ff; font-size: 36px; }
+.admin-auth :deep(.el-input__wrapper) { min-height: 48px; background: #fafcff; padding: 0 15px; }
+.admin-auth :deep(.el-form-item) { margin-bottom: 24px; }
+.admin-auth .auth-submit { height: 52px; background: linear-gradient(110deg, #36a3f5, #1769ff); border: 0; border-radius: 10px; font-size: 17px; box-shadow: 0 8px 20px #1769ff20; }
+.admin-auth__arrow { margin-left: 16px; }
+.admin-auth .auth-help { margin-top: 24px; line-height: 1.8; }
+.admin-auth .auth-principles { position: relative; z-index: 1; }
+.admin-auth .auth-principles span { padding: 10px 14px; background: #14244188; color: #d8e5fb; }
+@media (max-width: 1000px) { .admin-auth { grid-template-columns: 1fr 1fr; } .admin-auth .auth-form-wrap { padding: 24px; } }
+@media (max-width: 760px) { .admin-auth { grid-template-columns: 1fr; } .admin-auth .auth-intro { min-height: 250px; gap: 24px; } .admin-auth .auth-intro h1 { font-size: 32px; } .admin-auth .auth-principles { display: none; } .admin-auth .auth-form-wrap { padding: 24px 16px; } }
 @media (max-width: 860px) { .auth-page { grid-template-columns: 1fr; } .auth-intro { min-height: 310px; gap: 40px; } .auth-intro h1 { font-size: 36px; } }
 @media (max-width: 520px) { .auth-form-wrap { padding: 16px; } .form-pair { grid-template-columns: 1fr; gap: 0; } }
 </style>

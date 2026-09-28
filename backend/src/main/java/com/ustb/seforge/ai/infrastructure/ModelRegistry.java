@@ -17,6 +17,7 @@ public class ModelRegistry {
     private final Map<ModelCapability, List<AiModelEndpoint>> models = new EnumMap<>(ModelCapability.class);
     private final SEForgeProperties.Ai settings;
     private final Map<String, AiEmbeddingEndpoint> embeddings = new java.util.concurrent.ConcurrentHashMap<>();
+    private AiModelEndpoint visionEndpoint;
 
     public ModelRegistry(SEForgeProperties properties) {
         SEForgeProperties.Ai ai = properties.getAi();
@@ -36,11 +37,35 @@ public class ModelRegistry {
             register(ModelCapability.FAST, fallback);
             register(ModelCapability.REASONING, fallback);
             register(ModelCapability.CODING, fallback);
+            if (ai.getVisionModel() != null && !ai.getVisionModel().isBlank()) {
+                visionEndpoint = endpoint("dashscope", ai.getVisionModel(), ai.getDashscopeBaseUrl(),
+                        ai.getDashscopeApiKey(), ai);
+            }
         }
+    }
+
+    /** Dedicated DashScope endpoint for image understanding; it does not alter general model routing. */
+    public java.util.Optional<AiModelEndpoint> visionEndpoint() {
+        return java.util.Optional.ofNullable(visionEndpoint);
     }
 
     public List<AiModelEndpoint> candidates(ModelCapability capability) {
         return List.copyOf(models.getOrDefault(capability, List.of()));
+    }
+
+    /** Request-scoped transport deadline; never mutates the shared model configuration. */
+    public List<AiModelEndpoint> streamingCandidates(ModelCapability capability, java.time.Duration timeout) {
+        if (timeout == null || timeout.isNegative() || timeout.isZero() || timeout.compareTo(java.time.Duration.ofMinutes(10)) > 0)
+            throw new IllegalArgumentException("Streaming timeout must be within 10 minutes");
+        return candidates(capability).stream().map(endpoint -> {
+            boolean deepseek = endpoint.provider().equals("deepseek");
+            var streaming = OpenAiStreamingChatModel.builder()
+                    .baseUrl(deepseek ? settings.getDeepseekBaseUrl() : settings.getDashscopeBaseUrl())
+                    .apiKey(deepseek ? settings.getDeepseekApiKey() : settings.getDashscopeApiKey())
+                    .modelName(endpoint.model()).timeout(timeout)
+                    .logRequests(false).logResponses(false).returnThinking(false).build();
+            return new AiModelEndpoint(endpoint.provider(), endpoint.model(), endpoint.chatModel(), streaming);
+        }).toList();
     }
 
     public boolean available(ModelCapability capability) {

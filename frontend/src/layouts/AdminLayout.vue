@@ -4,6 +4,7 @@ import { Odometer, Tickets, UserFilled } from '@element-plus/icons-vue'
 import WorkspaceShell from './WorkspaceShell.vue'
 import type { WorkspaceNavItem } from './navigation'
 import { useAuthStore } from '@/stores/auth'
+import '@/assets/admin.css'
 
 const auth = useAuthStore()
 
@@ -16,6 +17,7 @@ const navigation = computed<WorkspaceNavItem[]>(() => [
 
 <template>
   <WorkspaceShell
+    class="admin-workspace"
     :navigation="navigation"
     workspace-label="管理控制台"
     :switch-links="auth.canTeach ? [{ label: '教学工作台', to: { name: 'teacher-home' } }] : []"

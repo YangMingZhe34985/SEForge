@@ -16,7 +16,12 @@ public class ModelRouter {
         return registry.candidates(capability);
     }
 
+    public java.util.Optional<AiModelEndpoint> visionEndpoint() { return registry.visionEndpoint(); }
+
     public String embeddingVersion() { return registry.embeddingVersion(); }
+    public List<AiModelEndpoint> streamingCandidates(ModelCapability capability, java.time.Duration timeout) {
+        return registry.streamingCandidates(capability, timeout);
+    }
     public int streamingRetries() { return registry.streamingRetries(); }
     public java.time.Duration timeout() { return registry.timeout(); }
 

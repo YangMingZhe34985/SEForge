@@ -7,5 +7,10 @@ public enum QuestionType {
     SHORT_ANSWER,
     ANALYSIS,
     DESIGN,
-    CODE
+    CODE,
+    DOCUMENT_REPORT;
+
+    public boolean objective() {
+        return this == SINGLE_CHOICE || this == MULTIPLE_CHOICE || this == TRUE_FALSE;
+    }
 }

@@ -9,7 +9,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface KnowledgeDocumentRepository extends JpaRepository<KnowledgeDocument, Long> {
     Optional<KnowledgeDocument> findByIdAndCourseId(Long id, Long courseId);
-    Optional<KnowledgeDocument> findByCourseIdAndChecksum(Long courseId, String checksum);
+    Optional<KnowledgeDocument> findFirstByCourseIdAndChapterIdAndChecksumOrderByIdDesc(Long courseId, Long chapterId, String checksum);
+    Optional<KnowledgeDocument> findByResourceId(Long resourceId);
     List<KnowledgeDocument> findAllByCourseIdOrderByCreatedAtDesc(Long courseId);
 
     @Query("select coalesce(sum(d.sizeBytes),0) from KnowledgeDocument d "

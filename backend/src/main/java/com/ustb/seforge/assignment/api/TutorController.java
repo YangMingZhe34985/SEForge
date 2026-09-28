@@ -1,6 +1,6 @@
 package com.ustb.seforge.assignment.api;
 
-import com.ustb.seforge.assignment.service.TutorService;
+import com.ustb.seforge.assignment.service.TutorRequestService;
 import com.ustb.seforge.common.api.ApiEnvelope;
 import com.ustb.seforge.identity.security.UserPrincipal;
 import jakarta.validation.Valid;
@@ -14,9 +14,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/assignments/{assignmentId}/tutor")
 public class TutorController {
-    private final TutorService tutor;
+    private final TutorRequestService tutor;
 
-    public TutorController(TutorService tutor) {
+    public TutorController(TutorRequestService tutor) {
         this.tutor = tutor;
     }
 
